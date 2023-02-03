@@ -53,12 +53,14 @@ double elapsedTime;
 volatile unsigned int* x_pio_ptr = NULL;
 volatile unsigned int* y_pio_ptr = NULL;
 volatile unsigned int* z_pio_ptr = NULL; 
-volatile unsigned int* clock_ptr = NULL; 
+volatile unsigned char* clock_ptr = NULL; 
+volatile unsigned char* rst_ptr   = NULL; 
 
 #define X_PIO                 0x00
 #define Y_PIO                 0x10
 #define Z_PIO                 0x20
 #define CLK_PIO				  0x30
+#define RST_PIO				  0x40
 
 // graphics primitives
 void VGA_text (int, int, char *);
@@ -134,7 +136,8 @@ int main(void)
 	x_pio_ptr = (unsigned int *)(h2p_lw_virtual_base + X_PIO);
 	y_pio_ptr = (unsigned int *)(h2p_lw_virtual_base + Y_PIO);
     z_pio_ptr = (unsigned int *)(h2p_lw_virtual_base + Z_PIO);
-	clock_ptr = (unsigned int *)(h2p_lw_virtual_base + CLK_PIO);
+	clock_ptr = (unsigned char *)(h2p_lw_virtual_base + CLK_PIO);
+	rst_ptr = (unsigned char *)(h2p_lw_virtual_base + RST_PIO);
 
 	// === get VGA char addr =====================
 	// get virtual addr that maps to physical
@@ -185,22 +188,22 @@ int main(void)
 	// B bits 0-4   mask 0x001f
 	// so color = B+(G<<5)+(R<<11);
 
-	int count = 0;
+	// reset to init values
+	*(clock_ptr) = 0;
+	*(rst_ptr) = 0;
+	*(clock_ptr) = 1;
+	*(clock_ptr) = 0;
+	*(rst_ptr) = 1;
+
 	
 	while(1) 
 	{
+		// send posedge
+		*(clock_ptr) = 1;
+		*(clock_ptr) = 0;
+
 		// start timer
 		gettimeofday(&t1, NULL);
-
-        //VGA_sin( 50, blue );
-
-		usleep(5000);
-
-		if ( *(clock_ptr) )
-			*(clock_ptr) = 0;
-		else
-			*(clock_ptr) = 1;
-		
 
 		printf( "xout = %f, yout = %f, zout = %f \n", fix2float(*(x_pio_ptr)), fix2float(*(y_pio_ptr)), fix2float(*(z_pio_ptr)) );
 		
@@ -214,10 +217,9 @@ int main(void)
 		elapsedTime += (t2.tv_usec - t1.tv_usec) ;   // us 
 		sprintf(time_string, "T = %6.0f uSec  ", elapsedTime);
 		VGA_text (30, 4, time_string);
+		
 		// set frame rate
-		//usleep(17000);
-
-		count++;
+		usleep(5000);
 		
 	} // end while(1)
 } // end main
@@ -226,22 +228,16 @@ int main(void)
  * Draw x, y, z output
 ****************************************************************************************/
 
-void VGA_xy(float x, float y)
-{
+void VGA_xy(float x, float y) {
 	VGA_PIXEL( 160 - (int)(x*4), 120 - (int)(y*4), white);
-
 }
 
-void VGA_xz(float x, float z)
-{
+void VGA_xz(float x, float z) {
 	VGA_PIXEL( 480 - (int)(x*4), 240 - (int)(z*4), white);
-
 }
 
-void VGA_yz(float y, float z)
-{
+void VGA_yz(float y, float z) {
 	VGA_PIXEL( 320 - (int)(y*4), 450 - (int)(z*4), white);
-
 }
 
 /****************************************************************************************
