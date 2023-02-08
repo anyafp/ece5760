@@ -22,10 +22,6 @@
 #define TRUE 1
 #define FALSE 0
 
-int choose_int = 0;
-int temp_start_stop;
-float temp_x, temp_y, temp_z, temp_sig, temp_beta, temp_rho;
-
 // lock for scanf
 pthread_mutex_t scan_lock = PTHREAD_MUTEX_INITIALIZER;
 
@@ -59,7 +55,9 @@ int fd;
 // measure time
 struct timeval t1, t2;
 double elapsedTime;
-char num_string[20], time_string[20] ;
+char num_string[20], time_string[20];
+char init_x_string[20], init_y_string[20], init_z_string[20];
+char sig_string[20], beta_string[20], rho_string[20], status_string[20];
 
 // X, Y, Z pointers
 volatile signed int* x_pio_ptr = NULL;
@@ -75,8 +73,6 @@ volatile signed int* rho_pio_ptr = NULL;
 volatile unsigned char* clock_ptr = NULL; 
 volatile unsigned char* rst_ptr   = NULL; 
 volatile unsigned char* start_stop_ptr = NULL; 
-
-
 
 #define X_PIO                 0x00
 #define Y_PIO                 0x10
@@ -140,91 +136,211 @@ int colors[] = {red, dark_red, green, dark_green, blue, dark_blue,
 	*(short *)pixel_ptr = (color);\
 } while(0)
 
+///////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////
+// THREADS ////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////
+
+// global variables for threads
+int choose_int = 0;   // which setting to change
+int change_init = 0;  // triggers change initial values
+int temp_start_stop = 0;  // 0: playing,  1: paused
+int speed_var = 5000; // variable for speed
+int temp_speed;       // variable to indicate speed up or slow down
+float temp_x = -1;
+float temp_y = 0.1;
+float temp_z = 25;
+float temp_sig = 10;
+float temp_beta = 2.6667;
+float temp_rho = 28;
 
 ///////////////////////////////////////////////////////////////
-// read from scanf
+// reset thread
 ///////////////////////////////////////////////////////////////
-void * scan()
-{
 
-    //int done = 1; 
+void * reset_thread() {
+
+  while (1) {
+  
+    if (change_init) {
     
-		while(1){
-
-				// the actual enter		
-        printf("Initial Values (0) or Start Stop (1)? ");	
-        scanf("%i", &choose_int);
-        //done = 0;
-        
-        if ( choose_int ) {
-          printf("Start (0) or Stop (1)? ");
-          scanf("%i", &temp_start_stop);
-          *(start_stop_ptr) = temp_start_stop;
-          //done = 1;
-        } else {
-          printf("Enter x: ");
-          scanf("%f", &temp_x);
-          printf("Enter y: ");
-          scanf("%f", &temp_y);
-          printf("Enter z: ");
-          scanf("%f", &temp_z);
-          printf("Enter sigma: ");
-          scanf("%f", &temp_sig);
-          printf("Enter beta: ");
-          scanf("%f", &temp_beta);
-          printf("Enter rho: ");
-          scanf("%f", &temp_rho);
-          
-          *(x_init_pio_ptr) = temp_x;
-          *(y_init_pio_ptr) = temp_y;
-          *(z_init_pio_ptr) = temp_z;
-          *(sigma_pio_ptr) = temp_sig;
-          *(beta_pio_ptr) = temp_beta;
-          *(rho_pio_ptr) = temp_rho;
-          
-          // reset to initial values
-          *(clock_ptr) = 0;
-        	*(rst_ptr) = 0;
-        	*(clock_ptr) = 1;
-        	*(clock_ptr) = 0;
-        	*(rst_ptr) = 1;
-          //done = 1;
-          
-        }
+      // update pio pointers
+      *(x_init_pio_ptr) = float2fix(temp_x);
+      *(y_init_pio_ptr) = float2fix(temp_y);
+      *(z_init_pio_ptr) = float2fix(temp_z);
+      
+      // reset
+      *(clock_ptr) = 0;
+    	*(rst_ptr) = 0;
+    	*(clock_ptr) = 1;
+    	*(clock_ptr) = 0;
+    	*(rst_ptr) = 1;
+     
+      // clear VGA
+      VGA_box (0, 0, 639, 479, 0x0000);
+      
+      // done initializing
+      change_init = 0;
     }
+  }
 }
 
 ///////////////////////////////////////////////////////////////
-// draw pixels
+// draw thread
 ///////////////////////////////////////////////////////////////
-void * draw()
-{
-		while(1){
 
-				// send posedge
+void * draw_thread() {
+		
+    while (1) {
+    
+      // start timer
+      gettimeofday( &t1, NULL );
+      
+      if ( !change_init ) {
+      
+        // send posedge
     		*(clock_ptr) = 1;
     		*(clock_ptr) = 0;
-    
-    		// start timer
-    		gettimeofday(&t1, NULL);
-    
-    		//printf( "xout = %f, yout = %f, zout = %f \n", fix2float(*(x_pio_ptr)), fix2float(*(y_pio_ptr)), fix2float(*(z_pio_ptr)) );
-    		
-    		VGA_xy( fix2float(*(x_pio_ptr)), fix2float(*(y_pio_ptr)) );
-    		VGA_xz( fix2float(*(x_pio_ptr)), fix2float(*(z_pio_ptr)) );
-    		VGA_yz( fix2float(*(y_pio_ptr)), fix2float(*(z_pio_ptr)) );
-    
-    		// stop timer
-    		gettimeofday(&t2, NULL);
-    		elapsedTime = (t2.tv_sec - t1.tv_sec) * 1000000.0;      // sec to us
-    		elapsedTime += (t2.tv_usec - t1.tv_usec) ;   // us 
-    		sprintf(time_string, "T = %6.0f uSec  ", elapsedTime);
-    		VGA_text (30, 4, time_string);
-    		
-    		// set frame rate
-    		usleep(5000);
-    }
+         
+        // if not paused
+        if (!temp_start_stop ) {
+        
+  //        // start timer
+  // 		    gettimeofday( &t1, NULL );
+           
+          // draw 3 graphs
+          VGA_xy( fix2float(*(x_pio_ptr)), fix2float(*(y_pio_ptr)) );
+     		  VGA_xz( fix2float(*(x_pio_ptr)), fix2float(*(z_pio_ptr)) );
+     		  VGA_yz( fix2float(*(y_pio_ptr)), fix2float(*(z_pio_ptr)) );
+            
+  //        // stop timer
+  //   		  gettimeofday( &t2, NULL );
+  //          
+  //        // draw time
+  //   		  elapsedTime = ( t2.tv_sec - t1.tv_sec ) * 1000000.0; // sec to us
+  //   		  elapsedTime += (t2.tv_usec - t1.tv_usec); // us 
+  //   		  sprintf( time_string, "T = %6.0f uSec  ", elapsedTime );
+  // 		    VGA_text( 30, 4, time_string );
+          
+          // print data
+            
+        }
+        
+  //      // stop timer
+  // 		  gettimeofday( &t2, NULL );
+  //        
+  //      // draw time
+  // 		  elapsedTime = ( t2.tv_sec - t1.tv_sec ) * 1000000.0; // sec to us
+  // 		  elapsedTime += (t2.tv_usec - t1.tv_usec); // us 
+  // 		  sprintf( time_string, "T = %6.0f uSec  ", elapsedTime );
+  //	    VGA_text( 30, 4, time_string );
+  
+        // print data
+        sprintf( time_string, "%i us", speed_var );
+        sprintf( init_x_string, "%f", temp_x );
+        sprintf( init_y_string, "%f", temp_y );
+        sprintf( init_z_string, "%f", temp_z );
+        sprintf( sig_string, "%f", temp_sig );
+        sprintf( beta_string, "%f", temp_beta );
+        sprintf( rho_string, "%f", temp_rho );
+        if ( temp_start_stop )
+          sprintf( status_string, "paused" );
+        else
+          sprintf( status_string, "played" );
+        
+        VGA_text( 13, 35, init_x_string );
+        VGA_text( 13, 36, init_y_string );
+        VGA_text( 13, 37, init_z_string );
+        VGA_text( 13, 38, sig_string );
+        VGA_text( 13, 39, beta_string );
+        VGA_text( 13, 40, rho_string );
+        VGA_text( 13, 41, time_string );
+        VGA_text( 13, 42, status_string );
+  
+        usleep( speed_var );
+        
+      }
+   }
 }
+
+///////////////////////////////////////////////////////////////
+// scan thread
+///////////////////////////////////////////////////////////////
+
+void * scan_thread() {
+  
+  while (1) {
+  
+    // Which category to change?
+    printf("0: init vals, 1: params, 2: speed, 3: pause/resume, 4: clear -- ");
+    scanf("%i", &choose_int);
+    
+    switch ( choose_int ) {
+    
+      case 0: // x, y, z, init values
+        printf("Enter x: ");
+        scanf("%f", &temp_x);
+        printf("Enter y: ");
+        scanf("%f", &temp_y);
+        printf("Enter z: ");
+        scanf("%f", &temp_z);
+        change_init = 1; // reset
+        
+        break;
+        
+      case 1: // sigma, beta, rho parameters
+        printf("Enter sigma: ");
+        scanf("%f", &temp_sig);
+        printf("Enter beta: ");
+        scanf("%f", &temp_beta);
+        printf("Enter rho: ");
+        scanf("%f", &temp_rho);
+        *(sigma_pio_ptr) = float2fix(temp_sig);
+        *(beta_pio_ptr) = float2fix(temp_beta);
+        *(rho_pio_ptr) = float2fix(temp_rho);
+        
+        break;
+        
+      case 2: // drawing speed
+        printf("Decrease (0) or Increase (1) speed? ");
+        scanf("%i", &temp_speed);
+        
+        // increase speed
+        if (temp_speed) {
+          // lower bound
+          if (speed_var > 500)
+            speed_var = speed_var - 500; // decrease sleep time
+        
+        // decrease speed    
+        } else {
+          // upper bound
+          if (speed_var < 30000)
+            speed_var = speed_var + 500; // increase sleep time
+        }
+        
+        break;
+        
+      case 3: // pause/resume
+        // if paused
+        if (temp_start_stop) {
+          temp_start_stop = 0; // play
+          *(start_stop_ptr) = temp_start_stop;
+        } else {
+          temp_start_stop = 1; // pause
+          *(start_stop_ptr) = temp_start_stop;
+        }
+        
+        break;
+        
+      case 4: // clear page
+        VGA_box (0, 0, 639, 479, 0x0000);
+        
+        break;
+    }
+  }
+}
+
 	
 int main(void)
 {
@@ -291,9 +407,14 @@ int main(void)
 
 	/* create a message to be displayed on the VGA 
           and LCD displays */
-	char text_top_row[40] = "DE1-SoC ARM/FPGA\0";
-	char text_bottom_row[40] = "Cornell ece5760\0";
-	char text_next[40] = "Graphics primitives\0";
+	char text_x[40] = "init x = ";
+  char text_y[40] = "init y = ";
+  char text_z[40] = "init z = ";
+	char text_sig[40] = "sig = ";
+  char text_beta[40] = "beta = ";
+  char text_rho[40] = "rho = ";
+	char text_speed[40] = "usleep = ";
+  char text_status[40] = "status = ";
 	char color_index = 0 ;
 	int color_counter = 0 ;
 
@@ -302,9 +423,14 @@ int main(void)
 	// clear the text
 	VGA_text_clear();
 	// write text
-	VGA_text (30, 1, text_top_row);
-	VGA_text (30, 2, text_bottom_row);
-	VGA_text (30, 3, text_next);
+	VGA_text (3, 35, text_x);
+  VGA_text (3, 36, text_y);
+  VGA_text (3, 37, text_z);
+  VGA_text (3, 38, text_sig);
+  VGA_text (3, 39, text_beta);
+  VGA_text (3, 40, text_rho);
+	VGA_text (3, 41, text_speed);
+  VGA_text (3, 42, text_status);
 	
 	// R bits 11-15 mask 0xf800
 	// G bits 5-10  mask 0x07e0
@@ -318,7 +444,7 @@ int main(void)
 	*(sigma_pio_ptr) = float2fix(10);
 	*(beta_pio_ptr) = float2fix(8/3);
 	*(rho_pio_ptr) = float2fix(28);
-	*(start_stop_ptr) = 1;
+	*(start_stop_ptr) = 0;
 
 	// reset to init values
 	*(clock_ptr) = 0;
@@ -328,20 +454,22 @@ int main(void)
 	*(rst_ptr) = 1;
  
    // thread identifiers
-   pthread_t thread_scan, thread_draw;
+   pthread_t thread_scan, thread_draw, thread_reset;
    
    // For portability, explicitly create threads in a joinable state 
 	 // thread attribute used here to allow JOIN
 	 pthread_attr_t attr;
-	 pthread_attr_init(&attr);
-	 pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
+	 pthread_attr_init( &attr );
+	 pthread_attr_setdetachstate( &attr, PTHREAD_CREATE_JOINABLE );
 	
 	 // now the threads
-   pthread_create(&thread_scan,NULL,scan,NULL);
-   pthread_create(&thread_draw,NULL,draw,NULL);
+   pthread_create( &thread_reset, NULL, reset_thread, NULL );
+   pthread_create( &thread_draw, NULL, draw_thread, NULL );
+   pthread_create( &thread_scan, NULL, scan_thread, NULL );
 
-   pthread_join(thread_scan,NULL);
-   pthread_join(thread_draw,NULL);
+   pthread_join( thread_reset, NULL );
+   pthread_join( thread_draw, NULL );
+   pthread_join( thread_scan, NULL );
    return 0;
 
 } // end main
