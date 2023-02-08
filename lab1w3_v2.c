@@ -55,7 +55,9 @@ int fd;
 // measure time
 struct timeval t1, t2;
 double elapsedTime;
-char num_string[20], time_string[20] ;
+char num_string[20], time_string[20];
+char init_x_string[20], init_y_string[20], init_z_string[20];
+char sig_string[20], beta_string[20], rho_string[20], status_string[20];
 
 // X, Y, Z pointers
 volatile signed int* x_pio_ptr = NULL;
@@ -146,7 +148,12 @@ int change_init = 0;  // triggers change initial values
 int temp_start_stop = 0;  // 0: playing,  1: paused
 int speed_var = 5000; // variable for speed
 int temp_speed;       // variable to indicate speed up or slow down
-float temp_x, temp_y, temp_z, temp_sig, temp_beta, temp_rho;
+float temp_x = -1;
+float temp_y = 0.1;
+float temp_z = 25;
+float temp_sig = 10;
+float temp_beta = 2.6667;
+float temp_rho = 28;
 
 ///////////////////////////////////////////////////////////////
 // reset thread
@@ -159,9 +166,9 @@ void * reset_thread() {
     if (change_init) {
     
       // update pio pointers
-      *(x_init_pio_ptr) = temp_x;
-      *(y_init_pio_ptr) = temp_y;
-      *(z_init_pio_ptr) = temp_z;
+      *(x_init_pio_ptr) = float2fix(temp_x);
+      *(y_init_pio_ptr) = float2fix(temp_y);
+      *(z_init_pio_ptr) = float2fix(temp_z);
       
       // reset
       *(clock_ptr) = 0;
@@ -169,6 +176,9 @@ void * reset_thread() {
     	*(clock_ptr) = 1;
     	*(clock_ptr) = 0;
     	*(rst_ptr) = 1;
+     
+      // clear VGA
+      VGA_box (0, 0, 639, 479, 0x0000);
       
       // done initializing
       change_init = 0;
@@ -210,20 +220,42 @@ void * draw_thread() {
 //   		  elapsedTime += (t2.tv_usec - t1.tv_usec); // us 
 //   		  sprintf( time_string, "T = %6.0f uSec  ", elapsedTime );
 // 		    VGA_text( 30, 4, time_string );
+        
+        // print data
           
-        // set frame rate
-        usleep( speed_var );
       }
       
-      // stop timer
- 		  gettimeofday( &t2, NULL );
-        
-      // draw time
- 		  elapsedTime = ( t2.tv_sec - t1.tv_sec ) * 1000000.0; // sec to us
- 		  elapsedTime += (t2.tv_usec - t1.tv_usec); // us 
- 		  sprintf( time_string, "T = %6.0f uSec  ", elapsedTime );
-	    VGA_text( 30, 4, time_string );
-         
+//      // stop timer
+// 		  gettimeofday( &t2, NULL );
+//        
+//      // draw time
+// 		  elapsedTime = ( t2.tv_sec - t1.tv_sec ) * 1000000.0; // sec to us
+// 		  elapsedTime += (t2.tv_usec - t1.tv_usec); // us 
+// 		  sprintf( time_string, "T = %6.0f uSec  ", elapsedTime );
+//	    VGA_text( 30, 4, time_string );
+
+      // print data
+      sprintf( time_string, "%i us", speed_var );
+      sprintf( init_x_string, "%f", temp_x );
+      sprintf( init_y_string, "%f", temp_y );
+      sprintf( init_z_string, "%f", temp_z );
+      sprintf( sig_string, "%f", temp_sig );
+      sprintf( beta_string, "%f", temp_beta );
+      sprintf( rho_string, "%f", temp_rho );
+      if ( temp_start_stop )
+        sprintf( status_string, "paused" );
+      else
+        sprintf( status_string, "played" );
+      
+      VGA_text( 13, 35, init_x_string );
+      VGA_text( 13, 36, init_y_string );
+      VGA_text( 13, 37, init_z_string );
+      VGA_text( 13, 38, sig_string );
+      VGA_text( 13, 39, beta_string );
+      VGA_text( 13, 40, rho_string );
+      VGA_text( 13, 41, time_string );
+      VGA_text( 13, 42, status_string );
+
       usleep( speed_var );
    }
 }
@@ -288,10 +320,10 @@ void * scan_thread() {
       case 3: // pause/resume
         // if paused
         if (temp_start_stop) {
-          temp_start_stop = 1; // play
+          temp_start_stop = 0; // play
           *(start_stop_ptr) = temp_start_stop;
         } else {
-          temp_start_stop = 0; // pause
+          temp_start_stop = 1; // pause
           *(start_stop_ptr) = temp_start_stop;
         }
         
@@ -371,9 +403,14 @@ int main(void)
 
 	/* create a message to be displayed on the VGA 
           and LCD displays */
-	char text_top_row[40] = "DE1-SoC ARM/FPGA\0";
-	char text_bottom_row[40] = "Cornell ece5760\0";
-	char text_next[40] = "Graphics primitives\0";
+	char text_x[40] = "init x = ";
+  char text_y[40] = "init y = ";
+  char text_z[40] = "init z = ";
+	char text_sig[40] = "sig = ";
+  char text_beta[40] = "beta = ";
+  char text_rho[40] = "rho = ";
+	char text_speed[40] = "usleep = ";
+  char text_status[40] = "status = ";
 	char color_index = 0 ;
 	int color_counter = 0 ;
 
@@ -382,9 +419,14 @@ int main(void)
 	// clear the text
 	VGA_text_clear();
 	// write text
-	VGA_text (30, 1, text_top_row);
-	VGA_text (30, 2, text_bottom_row);
-	VGA_text (30, 3, text_next);
+	VGA_text (3, 35, text_x);
+  VGA_text (3, 36, text_y);
+  VGA_text (3, 37, text_z);
+  VGA_text (3, 38, text_sig);
+  VGA_text (3, 39, text_beta);
+  VGA_text (3, 40, text_rho);
+	VGA_text (3, 41, text_speed);
+  VGA_text (3, 42, text_status);
 	
 	// R bits 11-15 mask 0xf800
 	// G bits 5-10  mask 0x07e0
