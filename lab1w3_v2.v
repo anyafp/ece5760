@@ -1,5 +1,7 @@
 
 
+
+
 module DE1_SoC_Computer (
 	////////////////////////////////////
 	// FPGA Pins
@@ -548,7 +550,9 @@ reg [31:0] bus_write_data ; //  data to send to Avalog bus
 // DDS signals
 reg [31:0] dds_accum_x, dds_accum_y, dds_accum_z;
 
-wire [31:0] dds_incr_x, dds_incr_
+wire [31:0] dds_incr_x, dds_incr_y, dds_incr_z;
+
+wire [15:0] sine_out_x, sine_out_y, sine_out_z;
 
 
 freq_LUT DDS_x (
@@ -567,9 +571,21 @@ freq_LUT DDS_z (
 );
 
 sync_rom sine_x (
-	.clock(), 
-	.address(), 
-	.sine()
+	.clock(CLOCK_50), 
+	.address(dds_accum_x[31:24]), 
+	.sine(sine_out_x)
+);
+
+sync_rom sine_y (
+	.clock(CLOCK_50), 
+	.address(dds_accum_y[31:24]), 
+	.sine(sine_out_y)
+);
+
+sync_rom sine_z (
+	.clock(CLOCK_50), 
+	.address(dds_accum_z[31:24]), 
+	.sine(sine_out_z)
 );
 
 
@@ -614,9 +630,11 @@ always @(posedge CLOCK_50) begin //CLOCK_50
 		// IF SW=10'h200 
 		// and Fout = (sample_rate)/(2^32)*{SW[9:0], 16'b0}
 		// then Fout=48000/(2^32)*(2^25) = 375 Hz
-		dds_accum <= dds_accum + {SW[9:0], 16'b0} ;
+		dds_accum_x <= dds_accum_x + dds_incr_x ;
+		dds_accum_y <= dds_accum_y + dds_incr_y ;
+		dds_accum_z <= dds_accum_z + dds_incr_z ;
 		// convert 16-bit table to 32-bit format
-		bus_write_data <= (sine_out << 16) ;
+		bus_write_data <= (sine_out_x << 10) + (sine_out_y << 10) + (sine_out_z << 10);
 		bus_addr <= audio_left_address ;
 		bus_byte_enable <= 4'b1111;
 		bus_write <= 1'b1 ;
@@ -637,7 +655,7 @@ always @(posedge CLOCK_50) begin //CLOCK_50
 	// -- now the right channel
 	if (state==4'd4) begin // 
 		state <= 4'd5;	
-		bus_write_data <= (sine_out << 16) ;
+		bus_write_data <= (sine_out_x << 10) + (sine_out_y << 10) + (sine_out_z << 10);
 		bus_addr <= audio_right_address ;
 		bus_write <= 1'b1 ;
 	end	
@@ -1394,5 +1412,7 @@ begin
 	endcase
 end
 endmodule
+
+
 
 
