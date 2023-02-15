@@ -29,8 +29,8 @@ module testbench();
 		reset  = 1'b1;
 	end
 
-    assign c_r = 27'b0000_01100000000000000000000;
-    assign c_i = -27'b0000_01100000000000000000000;
+    assign c_r = -27'sb0000_10011100000000000000000;
+    assign c_i = -27'sb0000_10011100000000000000000;
     assign max_iter  = 16'd1000;
 
     // Instantiation of Design Under Test
@@ -42,7 +42,7 @@ module testbench();
         .max_iter(max_iter),
         .total_iter(total_iter_out), 
         .done(done_out)
-    );
+	);
 
 endmodule
 
@@ -57,7 +57,7 @@ module mandelbrot (
     c_i,
     max_iter,
     total_iter, 
-    done );
+    done);
 
     input   clock, reset;
     input   signed [26:0] c_r, c_i;
@@ -65,9 +65,11 @@ module mandelbrot (
     output [15:0] total_iter;
     output done;
 
+    wire signed [26:0] z_r_sq, z_i_sq, z_r_i;
     reg signed [26:0] z_r, z_i; 
-    wire signed [26:0] z_r_sq, z_i_sq, z_r_i, z_r_temp, z_i_temp; 
+    wire signed [26:0] z_r_temp, z_i_temp;
     reg [15:0] temp_iter;
+    wire int_done_r, int_done_i, int_done;
 
 
 	always @ (posedge clock) begin
@@ -87,11 +89,18 @@ module mandelbrot (
     signed_mult sign_mult_z_i(.out(z_i_sq), .a(z_i), .b(z_i));
     signed_mult sign_mult_z_i_r(.out(z_r_i), .a(z_r), .b(z_i));
 
+    assign test_z_r = z_r;
+    assign test_z_i = z_i;
+
     assign z_r_temp = z_r_sq - z_i_sq + c_r;
     assign z_i_temp = ( z_r_i <<< 1 ) + c_i;
 
     // check each one more than 2
-    assign done = ( z_r_sq + z_i_sq ) > 27'b0100_00000000000000000000000 ? 1 : ( ( temp_iter == max_iter ) ? 1 : 0 );
+    assign int_done_r = ( ( z_r ) > 27'sb0010_00000000000000000000000 ) || ( ( z_r ) < -27'sb0010_00000000000000000000000 );
+    assign int_done_i = ( ( z_i ) > 27'sb0010_00000000000000000000000 ) || ( ( z_i ) < -27'sb0010_00000000000000000000000 );
+    assign int_done = int_done_r | int_done_i;
+
+    assign done = ( int_done == 1 ) || ( ( z_r_sq + z_i_sq ) > 27'sb0100_00000000000000000000000 ) || ( temp_iter == max_iter );
     assign total_iter = temp_iter;
 
 endmodule
