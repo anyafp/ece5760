@@ -1,5 +1,7 @@
 
 
+
+
 module DE1_SoC_Computer (
 	////////////////////////////////////
 	// FPGA Pins
@@ -388,7 +390,7 @@ reg [7:0] sram_address;
 reg sram_write ;
 wire sram_clken = 1'b1;
 wire sram_chipselect = 1'b1;
-reg [7:0] state ;
+reg [7:0] state = 8'd10;
 
 // rectangle corners
 reg [9:0] x1, y1, x2, y2 ;
@@ -431,8 +433,8 @@ mandelbrot iter1 (
 // x[i] = float2fix28(-2.0f + 3.0f * (float)i/640.0f) ;
 // y[j] = float2fix28(-1.0f + 2.0f * (float)j/480.0f) ;
 
-assign incr_x = 27'sb0000_00000001100110011001100;
-assign incr_y =  27'sb0000_00000000110011001100110;
+assign incr_x = 27'sb0000_00000001001100110011001;
+assign incr_y = 27'sb0000_00000001000100010001000;
 
 always @(posedge CLOCK_50) begin
 
@@ -446,87 +448,103 @@ always @(posedge CLOCK_50) begin
 	else begin
 		// general purpose tick counter
 		timer <= timer + 1;
-	end
-	
-	if (state == 8'd0) begin
-		vga_x_cood <= 0; 
-		vga_y_cood <= 1;
-		c_r_1 <= -27'sb0010_00000000000000000000000;
-		c_i_1 <= 27'sb0001_00000000000000000000000;
-		state <= 8'd1;
-		reset_1 <= 0;
-	end
-	
-	if (state == 8'd1) begin
-	   reset_1 <= 1;
-		if (~done_1) begin
-			state <= 8'd1;
-		end
-		else begin
-			state <= 8'd2;
-	   end
-	end
-	
-	if (state == 8'd2) begin
-		
-		if (total_iter_1 >= max_iter) begin
-		  color_reg <= 8'b_000_000_00 ; // black
-		end
-		else if (total_iter_1 >= (max_iter >>> 1)) begin
-		  color_reg <= 8'b_011_001_00 ; // white
-		end
-		else if (total_iter_1 >= (max_iter >>> 2)) begin
-		  color_reg <= 8'b_011_001_00 ;
-		end
-		else if (total_iter_1 >= (max_iter >>> 3)) begin
-		  color_reg <= 8'b_101_010_01 ;
-		end
-		else if (total_iter_1 >= (max_iter >>> 4)) begin
-		  color_reg <= 8'b_011_001_01 ;
-		end
-		else if (total_iter_1 >= (max_iter >>> 5)) begin
-		  color_reg <= 8'b_001_001_01 ;
-		end
-		else if (total_iter_1 >= (max_iter >>> 6)) begin
-		  color_reg <= 8'b_011_010_10 ;
-		end
-		else if (total_iter_1 >= (max_iter >>> 7)) begin
-		  color_reg <= 8'b_010_100_10 ;
-		end
-		else if (total_iter_1 >= (max_iter >>> 8)) begin
-		  color_reg <= 8'b_010_100_10 ;
-		end
-		else begin
-		  color_reg <= 8'b_010_100_10 ;
-		end
-		
-	   //draw//
-		vga_sram_write <= 1'b1;
-		// compute address
-	   vga_sram_address <= vga_out_base_address + {22'b0, vga_x_cood} + ({22'b0,vga_y_cood}*640) ; 
-		// data
-		vga_sram_writedata <= color_reg  ;
-		
-		vga_x_cood <= vga_x_cood + 1;
-		c_r_1 <= c_r_1 + incr_x;
-		
-		if (vga_x_cood > 10'd639) begin
-			vga_x_cood <= 0;
+		if (state == 8'd0) begin
+			vga_x_cood <= 0; 
+			vga_y_cood <= 0;
 			c_r_1 <= -27'sb0010_00000000000000000000000;
-			vga_y_cood <= vga_y_cood + 1;
-			c_i_1 <= c_i_1 - incr_y;
-		end
-		
-		if (vga_y_cood > 10'd479)
-			state <= 8'd3;
-		else 
+			c_i_1 <= 27'sb0001_00000000000000000000000;
 			state <= 8'd1;
 			reset_1 <= 0;
+			
+			// end vga write
+			vga_sram_write <= 1'b0;
+			// signal the HPS we are done
+			sram_address <= 8'd0 ;
+			sram_writedata <= 32'b1 ;
+			sram_write <= 1'b1 ;
+		end
+		
+		if (state == 8'd1) begin
+			reset_1 <= 1;
+			if (~done_1) begin
+				state <= 8'd1;
+			end
+			else begin
+				reset_1 <= 0;
+				state <= 8'd2;
+			end
+		end
+		
+		if (state == 8'd2) begin
+			
+			if (total_iter_1 >= max_iter) begin
+			  color_reg <= 8'b_000_000_00 ; // black
+			end
+			else if (total_iter_1 >= (max_iter >>> 1)) begin
+			  color_reg <= 8'b_011_001_00 ; // white
+			end
+			else if (total_iter_1 >= (max_iter >>> 2)) begin
+			  color_reg <= 8'b_011_001_00 ;
+			end
+			else if (total_iter_1 >= (max_iter >>> 3)) begin
+			  color_reg <= 8'b_101_010_01 ;
+			end
+			else if (total_iter_1 >= (max_iter >>> 4)) begin
+			  color_reg <= 8'b_011_001_01 ;
+			end
+			else if (total_iter_1 >= (max_iter >>> 5)) begin
+			  color_reg <= 8'b_001_001_01 ;
+			end
+			else if (total_iter_1 >= (max_iter >>> 6)) begin
+			  color_reg <= 8'b_011_010_10 ;
+			end
+			else if (total_iter_1 >= (max_iter >>> 7)) begin
+			  color_reg <= 8'b_010_100_10 ;
+			end
+			else if (total_iter_1 >= (max_iter >>> 8)) begin
+			  color_reg <= 8'b_010_100_10 ;
+			end
+			else begin
+			  color_reg <= 8'b_010_100_10 ;
+			end
+			
+			//draw//
+			vga_sram_write <= 1'b1;
+			// compute address
+			vga_sram_address <= vga_out_base_address + {22'b0, vga_x_cood} + ({22'b0,vga_y_cood}*640) ; 
+			// data
+			vga_sram_writedata <= color_reg  ;
+			
+			vga_x_cood <= vga_x_cood + 1;
+			c_r_1 <= c_r_1 + incr_x;
+			
+			if (vga_x_cood > 10'd639) begin
+				vga_x_cood <= 0;
+				c_r_1 <= -27'sb0010_00000000000000000000000;
+				vga_y_cood <= vga_y_cood + 1;
+				c_i_1 <= c_i_1 - incr_y;
+			end
+			
+			if (vga_y_cood > 10'd479) begin
+				state <= 8'd3;
+			end
+			else begin
+				state <= 8'd1;
+			end
+		end
+		
+		if (state == 8'd3) begin
+			// end vga write
+			vga_sram_write <= 1'b0;
+			// signal the HPS we are done
+			sram_address <= 8'd0 ;
+			sram_writedata <= 32'b0 ;
+			sram_write <= 1'b1 ;
+			state <= 8'd3;
+		end
 	end
 	
-	if (state == 8'd3) begin
-		state <= 8'd3;
-	end
+	
 end
 	
 //
@@ -1515,19 +1533,16 @@ module mandelbrot (
             temp_iter <= 0;
       end
 		else if (done == 0) begin
-			z_r <= z_r_temp;
-            z_i <= z_i_temp;
-            temp_iter <= temp_iter + 1;
-        end
+				z_r <= z_r_temp;
+				z_i <= z_i_temp;
+				temp_iter <= temp_iter + 1;
+      end
 	end
 
     signed_mult sign_mult_z_r(.out(z_r_sq), .a(z_r), .b(z_r));
     signed_mult sign_mult_z_i(.out(z_i_sq), .a(z_i), .b(z_i));
     signed_mult sign_mult_z_i_r(.out(z_r_i), .a(z_r), .b(z_i));
-
-    assign test_z_r = z_r;
-    assign test_z_i = z_i;
-
+	 
     assign z_r_temp = z_r_sq - z_i_sq + c_r;
     assign z_i_temp = ( z_r_i <<< 1 ) + c_i;
 
