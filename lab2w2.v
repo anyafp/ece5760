@@ -416,6 +416,7 @@ wire        [15:0] max_iter, total_iter_1;
 wire               done_1; 
 reg                reset_1;
 reg         [ 4:0] zoom = 0;
+reg 					 pressed = 0;
 
 assign max_iter = 16'd1000;
 
@@ -432,29 +433,10 @@ mandelbrot iter1 (
 // x[i] = float2fix28(-2.0f + 3.0f * (float)i/640.0f) ;
 // y[j] = float2fix28(-1.0f + 2.0f * (float)j/480.0f) ;
 
-assign incr_x = 27'sb0000_00000001001100110011001 >> zoom;
-assign incr_y = 27'sb0000_00000001000100010001000 >> zoom;
+assign incr_x = 27'sb0000_00000001001100110011001 >>> zoom;
+assign incr_y = 27'sb0000_00000001000100010001000 >>> zoom;
 
 always @(posedge CLOCK_50) begin
-
-	if (~KEY[2]) begin
-		if ( zoom < 5'd16 ) begin
-			zoom <= zoom + 1;
-			state <= 0 ;
-			vga_sram_write <= 1'b0 ; // set to on if a write operation to bus
-			sram_write <= 1'b0 ;
-			timer <= 0;
-		end
-	end 
-	if (~KEY[3]) begin
-		if ( zoom > 5'd0 ) begin
-			zoom <= zoom - 1;
-			state <= 0 ;
-			vga_sram_write <= 1'b0 ; // set to on if a write operation to bus
-			sram_write <= 1'b0 ;
-			timer <= 0;
-		end
-	end
 
 	// reset state machine and read/write controls
 	if (~KEY[1]) begin
@@ -463,6 +445,30 @@ always @(posedge CLOCK_50) begin
 		sram_write <= 1'b0 ;
 		timer <= 0;
 	end
+
+	else if (~KEY[2]) begin
+		if ( zoom < 5'd16 && pressed == 0 ) begin
+			zoom <= zoom + 1;
+			state <= 0 ;
+			vga_sram_write <= 1'b0 ; // set to on if a write operation to bus
+			sram_write <= 1'b0 ;
+			timer <= 0;
+			pressed <= 1;
+		end
+		
+	end 
+	else if (~KEY[3]) begin
+		if ( zoom > 5'd0 && pressed == 1 ) begin
+			zoom <= zoom - 1;
+			state <= 0 ;
+			vga_sram_write <= 1'b0 ; // set to on if a write operation to bus
+			sram_write <= 1'b0 ;
+			timer <= 0;
+			pressed <= 0;
+		end
+	end
+
+	
 	else begin
 		// general purpose tick counter
 		timer <= timer + 1;
