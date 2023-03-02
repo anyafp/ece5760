@@ -388,7 +388,6 @@ reg [7:0] sram_address;
 reg sram_write ;
 wire sram_clken = 1'b1;
 wire sram_chipselect = 1'b1;
-reg [7:0] state = 8'd10;
 
 // rectangle corners
 reg [9:0] x1, y1, x2, y2 ;
@@ -405,171 +404,210 @@ wire vga_sram_chipselect = 1'b1;
 
 //=======================================================
 // pixel address is
-reg [9:0] vga_x_cood, vga_y_cood ;
-reg [7:0] color_reg ;
+reg [9:0] vga_x_cood [1:0];
+reg [9:0] vga_y_cood [1:0];
+reg [7:0] color_reg  [1:0];
 
 //=======================================================
 
-reg  signed [26:0] c_r_1, c_i_1;
 wire signed [26:0] incr_x, incr_y;
-wire        [15:0] max_iter, total_iter_1;
-wire               done_1; 
-reg                reset_1;
+wire        [15:0] max_iter;
 reg         [ 4:0] zoom = 0;
 reg 					 pressed = 0;
 
+reg  signed [26:0] c_r_1 [1:0];
+reg  signed [26:0] c_i_1 [1:0];
+wire        [15:0] total_iter_1 [1:0];
+wire        [ 1:0] done; 
+reg         [ 1:0] reset;
+reg         [ 7:0] state [1:0];
+
 assign max_iter = 16'd1000;
+assign incr_x = 27'sb0000_00000001001100110011001;
+assign incr_y = 27'sb0000_00000001000100010001000;
 
-mandelbrot iter1 (
-    .clock(CLOCK_50),
-    .reset(reset_1),
-    .c_r(c_r_1),
-    .c_i(c_i_1),
-    .max_iter(max_iter),
-    .total_iter(total_iter_1), 
-    .done(done_1)
-);
+reg [1:0] draw_flag;
+reg [1:0] done_flag;
 
-// x[i] = float2fix28(-2.0f + 3.0f * (float)i/640.0f) ;
-// y[j] = float2fix28(-1.0f + 2.0f * (float)j/480.0f) ;
+reg [1:0] flag = 2'b0;
 
-assign incr_x = 27'sb0000_00000001001100110011001 >>> zoom;
-assign incr_y = 27'sb0000_00000001000100010001000 >>> zoom;
+//=======================================================
+// Arbiter
+//=======================================================
 
 always @(posedge CLOCK_50) begin
-
-	// reset state machine and read/write controls
-	if (~KEY[1]) begin
-		state <= 0 ;
-		vga_sram_write <= 1'b0 ; // set to on if a write operation to bus
-		sram_write <= 1'b0 ;
-		timer <= 0;
-	end
-
-	else if (~KEY[2]) begin
-		if ( zoom < 5'd16 && pressed == 0 ) begin
-			zoom <= zoom + 1;
-			state <= 0 ;
-			vga_sram_write <= 1'b0 ; // set to on if a write operation to bus
-			sram_write <= 1'b0 ;
-			timer <= 0;
-			pressed <= 1;
-		end
-		
-	end 
-	else if (~KEY[3]) begin
-		if ( zoom > 5'd0 && pressed == 1 ) begin
-			zoom <= zoom - 1;
-			state <= 0 ;
-			vga_sram_write <= 1'b0 ; // set to on if a write operation to bus
-			sram_write <= 1'b0 ;
-			timer <= 0;
-			pressed <= 0;
-		end
-	end
-
-	
-	else begin
-		// general purpose tick counter
-		timer <= timer + 1;
-		if (state == 8'd0) begin
-			vga_x_cood <= 0; 
-			vga_y_cood <= 0;
-			c_r_1 <= -27'sb0010_00000000000000000000000;
-			c_i_1 <= 27'sb0001_00000000000000000000000;
-			state <= 8'd1;
-			reset_1 <= 0;
-			
-			// end vga write
-			vga_sram_write <= 1'b0;
-			// signal the HPS we are done
-			sram_address <= 8'd0 ;
-			sram_writedata <= 32'b1 ;
-			sram_write <= 1'b1 ;
-		end
-		
-		if (state == 8'd1) begin
-			reset_1 <= 1;
-			if (~done_1) begin
-				state <= 8'd1;
-			end
-			else begin
-				reset_1 <= 0;
-				state <= 8'd2;
-			end
-		end
-		
-		if (state == 8'd2) begin
-			
-			if (total_iter_1 >= max_iter) begin
-			  color_reg <= 8'b_000_000_00 ; // black
-			end
-			else if (total_iter_1 >= (max_iter >>> 1)) begin
-			  color_reg <= 8'b_011_001_00 ; // white
-			end
-			else if (total_iter_1 >= (max_iter >>> 2)) begin
-			  color_reg <= 8'b_011_001_00 ;
-			end
-			else if (total_iter_1 >= (max_iter >>> 3)) begin
-			  color_reg <= 8'b_101_010_01 ;
-			end
-			else if (total_iter_1 >= (max_iter >>> 4)) begin
-			  color_reg <= 8'b_011_001_01 ;
-			end
-			else if (total_iter_1 >= (max_iter >>> 5)) begin
-			  color_reg <= 8'b_001_001_01 ;
-			end
-			else if (total_iter_1 >= (max_iter >>> 6)) begin
-			  color_reg <= 8'b_011_010_10 ;
-			end
-			else if (total_iter_1 >= (max_iter >>> 7)) begin
-			  color_reg <= 8'b_010_100_10 ;
-			end
-			else if (total_iter_1 >= (max_iter >>> 8)) begin
-			  color_reg <= 8'b_010_100_10 ;
-			end
-			else begin
-			  color_reg <= 8'b_010_100_10 ;
-			end
-			
+	casex (done_flag)
+		2'bx1: begin
 			//draw//
-			vga_sram_write <= 1'b1;
+			//vga_sram_write <= 1'b1;
 			// compute address
-			vga_sram_address <= vga_out_base_address + {22'b0, vga_x_cood} + ({22'b0,vga_y_cood}*640) ; 
+			vga_sram_address <= vga_out_base_address + {22'b0, vga_x_cood[0]} + ({22'b0,vga_y_cood[0]}*640) ; 
 			// data
-			vga_sram_writedata <= color_reg  ;
-			
-			vga_x_cood <= vga_x_cood + 1;
-			c_r_1 <= c_r_1 + incr_x;
-			
-			if (vga_x_cood > 10'd639) begin
-				vga_x_cood <= 0;
-				c_r_1 <= -27'sb0010_00000000000000000000000;
-				vga_y_cood <= vga_y_cood + 1;
-				c_i_1 <= c_i_1 - incr_y;
-			end
-			
-			if (vga_y_cood > 10'd479) begin
-				state <= 8'd3;
-			end
-			else begin
-				state <= 8'd1;
+			vga_sram_writedata <= color_reg[0];
+			draw_flag <= 2'b01;
+		end
+		2'b10: begin
+			//draw//
+			//vga_sram_write <= 1'b1;
+			// compute address
+			vga_sram_address <= vga_out_base_address + {22'b0, vga_x_cood[1]} + ({22'b0,vga_y_cood[1]}*640) ; 
+			// data
+			vga_sram_writedata <= color_reg[1];
+			draw_flag <= 2'b10;
+		end
+		default: begin
+			draw_flag = 2'b0;
+		end
+		
+	endcase
+end
+
+
+//=======================================================
+// Instantiate 2 iterators
+//=======================================================
+genvar i;
+ generate
+ 
+   for (i = 0; i < 2; i = i + 1) begin: iterations
+		mandelbrot iter (
+		.clock(CLOCK_50),
+		.reset(reset[i]),
+		.c_r(c_r_1[i]),
+		.c_i(c_i_1[i]),
+		.max_iter(max_iter),
+		.total_iter(total_iter_1[i]), 
+		.done(done[i])
+	   );
+	 
+	 always @(posedge CLOCK_50) begin
+
+		// reset state machine and read/write controls
+		if (~KEY[1]) begin
+			state[i] <= 0 ;
+			if ( i == 0 ) begin
+				vga_sram_write <= 1'b0 ; // set to on if a write operation to bus
+				sram_write <= 1'b0 ;
 			end
 		end
 		
-		if (state == 8'd3) begin
-			// end vga write
-			vga_sram_write <= 1'b0;
-			// signal the HPS we are done
-			sram_address <= 8'd0 ;
-			sram_writedata <= 32'b0 ;
-			sram_write <= 1'b1 ;
-			state <= 8'd3;
+		else begin
+		
+			if (state[i] == 8'd0) begin
+				vga_x_cood[i] <= i; 
+				vga_y_cood[i] <= 0;
+				c_r_1[i] <= -27'sb0010_00000000000000000000000 + i*27'sb0000_00000001001100110011001;
+				c_i_1[i] <= 27'sb0001_00000000000000000000000;
+				// only one iterator needs to signal this
+				if ( i == 0 ) begin
+				   // tell HPS to start timing
+					sram_address <= 8'd0 ;
+					sram_writedata <= 32'b1 ;
+					sram_write <= 1'b1 ;
+					// end vga write
+					vga_sram_write <= 1'b0;
+				end
+				state[i] <= 8'd1;
+				reset[i] <= 0;
+				
+			end
+			
+			if (state[i] == 8'd1) begin
+				if ( i == 0 ) begin
+					vga_sram_write <= 1'b1;
+				end
+				reset[i] <= 1;
+				if (~done[i]) begin
+					state[i] <= 8'd1;
+				end
+				else begin
+					done_flag[i] <= 1'b1;
+					reset[i] <= 1'b0;
+					state[i] <= 8'd2;
+					
+					// assign color reg
+					if (total_iter_1[i] >= max_iter) begin
+					  color_reg[i] <= 8'b_000_000_00 ; // black
+					end
+					else if (total_iter_1[i] >= (max_iter >>> 1)) begin
+					  color_reg[i] <= 8'b_011_001_00 ; // white
+					end
+					else if (total_iter_1[i] >= (max_iter >>> 2)) begin
+					  color_reg[i] <= 8'b_011_001_00 ;
+					end
+					else if (total_iter_1[i] >= (max_iter >>> 3)) begin
+					  color_reg[i] <= 8'b_101_010_01 ;
+					end
+					else if (total_iter_1[i] >= (max_iter >>> 4)) begin
+					  color_reg[i] <= 8'b_011_001_01 ;
+					end 
+					else if (total_iter_1[i] >= (max_iter >>> 5)) begin
+					  color_reg[i] <= 8'b_001_001_01 ;
+					end
+					else if (total_iter_1[i] >= (max_iter >>> 6)) begin
+					  color_reg[i] <= 8'b_011_010_10 ;
+					end
+					else if (total_iter_1[i] >= (max_iter >>> 7)) begin
+					  color_reg[i] <= 8'b_010_100_10 ;
+					end
+					else if (total_iter_1[i] >= (max_iter >>> 8)) begin
+					  color_reg[i] <= 8'b_010_100_10 ;
+					end
+					else begin
+					  color_reg[i] <= 8'b_010_100_10 ;
+					end
+				end
+			end
+			
+			
+			if (state[i] == 8'd2) begin
+				
+				if (draw_flag[i]) begin
+					done_flag[i] = 1'b0;
+					vga_x_cood[i] <= vga_x_cood[i] + 2;
+					c_r_1[i] <= c_r_1[i] + 2*incr_x;
+					
+					if (vga_x_cood[i] > 10'd639) begin
+						vga_x_cood[i] <= i;
+						c_r_1[i] <= -27'sb0010_00000000000000000000000 + i*27'sb0000_00000001001100110011001;
+						vga_y_cood[i] <= vga_y_cood[i] + 1;
+						c_i_1[i] <= c_i_1[i] - incr_y;
+					end
+					
+					if (vga_y_cood[i] > 10'd479) begin
+						state[i] <= 8'd3;
+					end
+					else begin
+						state[i] <= 8'd1;
+					end
+				end
+				else begin
+					state[i] <= 8'd2;
+				end
+			end
+			
+			if (state[i] == 8'd3) begin
+				flag[i] = 1'b1;
+				if (i == 0 && flag == 2'd3) begin
+					// only one iterator needs to signal done
+					// end vga write
+					vga_sram_write <= 1'b0;
+					sram_address <= 8'd0 ;
+					sram_writedata <= 32'b0 ;
+					sram_write <= 1'b1 ;
+				end
+				state[i] <= 8'd3;
+			end
 		end
+		
+		
 	end
-	
-	
-end
+	 
+	 
+ end 
+endgenerate
+    
+
 	
 //
 ////=======================================================
