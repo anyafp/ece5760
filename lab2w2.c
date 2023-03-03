@@ -46,6 +46,18 @@ void *vga_char_virtual_base;
 // /dev/mem file id
 int fd;
 
+volatile signed int* x_pio_ptr = NULL;
+volatile signed int* y_pio_ptr = NULL;
+volatile signed int* incr_x_pio_ptr = NULL; 
+volatile signed int* incr_y_pio_ptr = NULL;
+volatile unsigned char* reset_pio_ptr = NULL;
+
+#define X_PIO                 0x00
+#define Y_PIO                 0x10
+#define X_INCR_PIO            0x20
+#define Y_INCR_PIO				    0x30
+#define RST_PIO				        0x40
+
 // pixel macro
 // !!!PACKED VGA MEMORY!!!
 #define VGA_PIXEL(x,y,color) do{\
@@ -59,9 +71,32 @@ int fd;
 struct timeval t1, t2;
 double elapsedTime;
 struct timespec delay_time ;
-	
+
+int float2fix(float);
+
+int float2fix(float a) { return (int)(a*8388608); }
+
 int main(void)
 {
+  // === MOUSE =======================
+  
+  int fdm, bytes;
+  unsigned char data[3];
+
+  const char *pDevice = "/dev/input/mice";
+
+  // Open Mouse
+  fdm = open(pDevice, O_RDWR);
+  if(fdm == -1)
+  {
+      printf("ERROR Opening %s\n", pDevice);
+      return -1;
+  }
+
+  int left, middle, right;
+  signed char x, y;
+  // ==========================
+  
 	delay_time.tv_nsec = 10 ;
 	delay_time.tv_sec = 0 ;
 
@@ -88,6 +123,12 @@ int main(void)
 		close( fd );
 		return(1);
 	}
+ 
+  x_pio_ptr = (signed int *)(h2p_lw_virtual_base + X_PIO);
+	y_pio_ptr = (signed int *)(h2p_lw_virtual_base + Y_PIO);
+  incr_x_pio_ptr = (signed int *)(h2p_lw_virtual_base + X_INCR_PIO);
+	incr_y_pio_ptr = (signed int *)(h2p_lw_virtual_base + Y_INCR_PIO);
+	reset_pio_ptr = (unsigned char *)(h2p_lw_virtual_base + RST_PIO);
 	
 	// === get VGA char addr =====================
 	// get virtual addr that maps to physical
@@ -124,7 +165,7 @@ int main(void)
 	}
     // Get the address that maps to the RAM buffer
 	sram_ptr =(unsigned int *)(sram_virtual_base);
-	
+ 
 	// ===========================================
 
 	/* create a message to be displayed on the VGA 
@@ -148,17 +189,104 @@ int main(void)
  *(sram_ptr)=0;
 	
 	count = 0;
+ 
+  float x_incr = 0.0046875;
+  float y_incr = 0.00416666666667;
+  float x_val = -2.0;
+  float y_val = 1.0;
+  int x_vga = 0;
+  int y_vga = 0;
+  
+  int x_accum = 0;
+  int y_accum = 0;
+  
+  *(x_pio_ptr) = float2fix(x_val);
+  *(y_pio_ptr) = float2fix(y_val);
+  *(incr_x_pio_ptr) = float2fix(x_incr);
+  *(incr_y_pio_ptr) = float2fix(y_incr);
+  
+  // reset to init values
+	*(reset_pio_ptr) = 0;
+  usleep( 1 );
+	*(reset_pio_ptr) = 1;
+  
 	while(1) 
 	{
- 
-    while (*(sram_ptr)==0);
+    printf("before start drawing\n");
+    // after first reset, fpga in state 3
+    while (*(sram_ptr)==0) {
+      // === MOUSE =======================    
+      bytes = read(fdm, data, sizeof(data));
+  
+      if(bytes > 0)
+      {
+          left = data[0] & 0x1;
+          right = data[0] & 0x2;
+          middle = data[0] & 0x4;
+  
+          x = data[1];
+          y = data[2];
+          printf("x=%d, y=%d, left=%d, middle=%d, right=%d\n", x, y, left, middle, right);
+          
+          x_accum += x/2;
+          y_accum += y/2;
+          
+          printf( "current coord = %d, %d, accum_x = %d, accum_y = %d\n", x_vga, y_vga, x_accum, y_accum);
+          
+          // zoom in if not maxed out
+          if ( left == 1 && x_incr > 0.00000000715255 && y_incr > 0.00000000635788 ) {
+            x_incr = x_incr/2;
+            y_incr = y_incr/2;
+            *(incr_x_pio_ptr) = float2fix(x_incr);
+            *(incr_y_pio_ptr) = float2fix(y_incr);
+            *(reset_pio_ptr) = 0;
+            usleep( 1 );
+          	*(reset_pio_ptr) = 1;
+            x_accum = 0;
+            y_accum = 0;
+          // zoom out
+          } else if ( right == 2 && x < 4.9 && y < 4.3 ) {
+            x_incr = x_incr*2;
+            y_incr = y_incr*2;
+            *(incr_x_pio_ptr) = float2fix(x_incr);
+            *(incr_y_pio_ptr) = float2fix(y_incr);
+            *(reset_pio_ptr) = 0;
+            usleep( 1 );
+          	*(reset_pio_ptr) = 1;
+            x_accum = 0;
+            y_accum = 0;
+          } else if ( middle == 4 ) {
+            if ( x_val + x_accum*x_incr < 640 || x_val + x_accum*x_incr > 0 ) {
+              x_val = x_val + x_accum*x_incr;
+              x_vga = x_vga + x_accum;
+            }
+            if ( y_val + y_accum*y_incr < 480 || y_val + y_accum*y_incr > 0 ) {
+              y_val = y_val + y_accum*y_incr;
+              y_vga = y_vga + y_accum;
+            }
+            *(x_pio_ptr) = float2fix(x_val);
+            *(y_pio_ptr) = float2fix(y_val);
+            *(reset_pio_ptr) = 0;
+            usleep( 1 );
+          	*(reset_pio_ptr) = 1;
+            x_accum = 0;
+            y_accum = 0;
+          }
+            
+      } // if bytes > 0
+    
+    } // while sram ptr = 0
 
 		gettimeofday(&t1, NULL);
+   
+    printf("start drawing\n");
 	
 		// wait for FPGA to zero the "data_ready" flag
 		while (*(sram_ptr)==1) ;
+   
+    printf("done drawing\n");
 		
-		// time the FPGA
+		// === time the fpga =======================
 		gettimeofday(&t2, NULL);
 		elapsedTime = (t2.tv_sec - t1.tv_sec) * 1000000.0;      // sec to us
 		elapsedTime += (t2.tv_usec - t1.tv_usec) ;   // us to 
@@ -166,7 +294,7 @@ int main(void)
 		sprintf(time_string, "T=%8.0f uSec  ", elapsedTime);
 		//VGA_text (10, 3, num_string);
 		VGA_text (10, 4, time_string);
-		
+
 	} // end while(1)
 } // end main
 
