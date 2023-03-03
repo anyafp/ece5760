@@ -415,21 +415,25 @@ wire        [15:0] max_iter;
 reg         [ 4:0] zoom = 0;
 reg 					 pressed = 0;
 
-reg  signed [26:0] c_r_1 [1:0];
-reg  signed [26:0] c_i_1 [1:0];
-wire        [15:0] total_iter_1 [1:0];
+reg  signed [26:0] c_r [1:0];
+reg  signed [26:0] c_i [1:0];
+wire        [15:0] total_iter [1:0];
 wire        [ 1:0] done; 
 reg         [ 1:0] reset;
 reg         [ 7:0] state [1:0];
 
+wire arm_reset;
+
 assign max_iter = 16'd1000;
-assign incr_x = 27'sb0000_00000001001100110011001;
-assign incr_y = 27'sb0000_00000001000100010001000;
+//assign incr_x = 27'sb0000_00000001001100110011001;
+//assign incr_y = 27'sb0000_00000001000100010001000;
 
 reg [1:0] draw_flag;
 reg [1:0] done_flag;
 
 reg [1:0] flag = 2'b0;
+
+wire [26:0] c_r_init, c_i_init;
 
 //=======================================================
 // Arbiter
@@ -473,17 +477,17 @@ genvar i;
 		mandelbrot iter (
 		.clock(CLOCK_50),
 		.reset(reset[i]),
-		.c_r(c_r_1[i]),
-		.c_i(c_i_1[i]),
+		.c_r(c_r[i]),
+		.c_i(c_i[i]),
 		.max_iter(max_iter),
-		.total_iter(total_iter_1[i]), 
+		.total_iter(total_iter[i]), 
 		.done(done[i])
 	   );
 	 
 	 always @(posedge CLOCK_50) begin
 
 		// reset state machine and read/write controls
-		if (~KEY[1]) begin
+		if (~arm_reset) begin
 			state[i] <= 0 ;
 			if ( i == 0 ) begin
 				vga_sram_write <= 1'b0 ; // set to on if a write operation to bus
@@ -496,8 +500,9 @@ genvar i;
 			if (state[i] == 8'd0) begin
 				vga_x_cood[i] <= i; 
 				vga_y_cood[i] <= 0;
-				c_r_1[i] <= -27'sb0010_00000000000000000000000 + i*27'sb0000_00000001001100110011001;
-				c_i_1[i] <= 27'sb0001_00000000000000000000000;
+				c_r[i] <= c_r_init + i*incr_x;
+				c_i[i] <= c_i_init;
+				flag[i] <= 1'b0;
 				// only one iterator needs to signal this
 				if ( i == 0 ) begin
 				   // tell HPS to start timing
@@ -526,31 +531,31 @@ genvar i;
 					state[i] <= 8'd2;
 					
 					// assign color reg
-					if (total_iter_1[i] >= max_iter) begin
+					if (total_iter[i] >= max_iter) begin
 					  color_reg[i] <= 8'b_000_000_00 ; // black
 					end
-					else if (total_iter_1[i] >= (max_iter >>> 1)) begin
+					else if (total_iter[i] >= (max_iter >>> 1)) begin
 					  color_reg[i] <= 8'b_011_001_00 ; // white
 					end
-					else if (total_iter_1[i] >= (max_iter >>> 2)) begin
+					else if (total_iter[i] >= (max_iter >>> 2)) begin
 					  color_reg[i] <= 8'b_011_001_00 ;
 					end
-					else if (total_iter_1[i] >= (max_iter >>> 3)) begin
+					else if (total_iter[i] >= (max_iter >>> 3)) begin
 					  color_reg[i] <= 8'b_101_010_01 ;
 					end
-					else if (total_iter_1[i] >= (max_iter >>> 4)) begin
+					else if (total_iter[i] >= (max_iter >>> 4)) begin
 					  color_reg[i] <= 8'b_011_001_01 ;
 					end 
-					else if (total_iter_1[i] >= (max_iter >>> 5)) begin
+					else if (total_iter[i] >= (max_iter >>> 5)) begin
 					  color_reg[i] <= 8'b_001_001_01 ;
 					end
-					else if (total_iter_1[i] >= (max_iter >>> 6)) begin
+					else if (total_iter[i] >= (max_iter >>> 6)) begin
 					  color_reg[i] <= 8'b_011_010_10 ;
 					end
-					else if (total_iter_1[i] >= (max_iter >>> 7)) begin
+					else if (total_iter[i] >= (max_iter >>> 7)) begin
 					  color_reg[i] <= 8'b_010_100_10 ;
 					end
-					else if (total_iter_1[i] >= (max_iter >>> 8)) begin
+					else if (total_iter[i] >= (max_iter >>> 8)) begin
 					  color_reg[i] <= 8'b_010_100_10 ;
 					end
 					else begin
@@ -565,13 +570,13 @@ genvar i;
 				if (draw_flag[i]) begin
 					done_flag[i] = 1'b0;
 					vga_x_cood[i] <= vga_x_cood[i] + 2;
-					c_r_1[i] <= c_r_1[i] + 2*incr_x;
+					c_r[i] <= c_r[i] + 2*incr_x;
 					
 					if (vga_x_cood[i] > 10'd639) begin
 						vga_x_cood[i] <= i;
-						c_r_1[i] <= -27'sb0010_00000000000000000000000 + i*27'sb0000_00000001001100110011001;
+						c_r[i] <= c_r_init + i*incr_x;
 						vga_y_cood[i] <= vga_y_cood[i] + 1;
-						c_i_1[i] <= c_i_1[i] - incr_y;
+						c_i[i] <= c_i[i] - incr_y;
 					end
 					
 					if (vga_y_cood[i] > 10'd479) begin
@@ -588,7 +593,7 @@ genvar i;
 			
 			if (state[i] == 8'd3) begin
 				flag[i] = 1'b1;
-				if (i == 0 && flag == 2'd3) begin
+				if (i == 0 && flag == 2'b11) begin
 					// only one iterator needs to signal done
 					// end vga write
 					vga_sram_write <= 1'b0;
@@ -872,6 +877,13 @@ Computer_System The_System (
 	.onchip_vga_buffer_s1_write      (vga_sram_write),      
 	.onchip_vga_buffer_s1_readdata   (),   // never read from vga here
 	.onchip_vga_buffer_s1_writedata  (vga_sram_writedata),   
+	
+	// HPS
+	.mouse_x_pio_ext_export (c_r_init),
+	.mouse_y_pio_ext_export (c_i_init),
+	.incr_x_pio_ext_export  (incr_x),
+	.incr_y_pio_ext_export  (incr_y), 
+	.arm_reset_pio_ext_export (arm_reset),
 
 	// AV Config
 	.av_config_SCLK							(FPGA_I2C_SCLK),
