@@ -404,9 +404,9 @@ wire vga_sram_chipselect = 1'b1;
 
 //=======================================================
 // pixel address is
-reg [9:0] vga_x_cood [22:0];
-reg [9:0] vga_y_cood [22:0];
-reg [7:0] color_reg  [22:0];
+reg [9:0] vga_x_cood [24:0];
+reg [9:0] vga_y_cood [24:0];
+reg [7:0] color_reg  [24:0];
 
 //=======================================================
 
@@ -415,21 +415,21 @@ wire        [15:0] max_iter;
 reg         [ 4:0] zoom = 0;
 reg 		   pressed = 0;
 
-reg  signed [26:0] c_r [22:0];
-reg  signed [26:0] c_i [22:0];
-wire        [15:0] total_iter [22:0];
-wire        [22:0] done; 
-reg         [22:0] reset;
-reg         [ 7:0] state [22:0];
+reg  signed [26:0] c_r [24:0];
+reg  signed [26:0] c_i [24:0];
+wire        [15:0] total_iter [24:0];
+wire        [24:0] done; 
+reg         [24:0] reset;
+reg         [ 7:0] state [24:0];
 
 wire arm_reset;
 
 assign max_iter = ( SW[0] ? 16'd1500 : SW[1] ? 16'd2000 : SW[2] ? 16'd2500 : SW[3] ? 16'd3000 : SW[4] ? 16'd3500 : SW[5] ? 16'd4000 : SW[6] ? 16'd4500 : SW[7] ? 16'd5000 : 16'd1000 );
 
-reg [22:0] draw_flag;
-reg [22:0] done_flag;
+reg [24:0] draw_flag;
+reg [24:0] done_flag;
 
-reg [22:0] flag = 10'b0;
+reg [24:0] flag = 10'b0;
 
 wire [26:0] c_r_init, c_i_init;
 
@@ -439,179 +439,233 @@ wire [26:0] c_r_init, c_i_init;
 
 always @(posedge CLOCK_50) begin
 	casex (done_flag)
-		23'bxxxxxxxxxxxxxxxxxxxxxx1: begin
+		25'bxxxxxxxxxxxxxxxxxxxxxxxx1: begin
 			//draw//
 			//vga_sram_write <= 1'b1;
 			// compute address
 			vga_sram_address <= vga_out_base_address + {22'b0, vga_x_cood[0]} + ({22'b0,vga_y_cood[0]}*640) ; 
 			// data
 			vga_sram_writedata <= color_reg[0];
-			draw_flag <= 23'd1;
+			draw_flag <= 25'd1;
 		end
-		23'bxxxxxxxxxxxxxxxxxxxxx10: begin
+		25'bxxxxxxxxxxxxxxxxxxxxxxx10: begin
 			//draw//
 			//vga_sram_write <= 1'b1;
 			// compute address
 			vga_sram_address <= vga_out_base_address + {22'b0, vga_x_cood[1]} + ({22'b0,vga_y_cood[1]}*640) ; 
 			// data
 			vga_sram_writedata <= color_reg[1];
-			draw_flag <= 23'd2;
+			draw_flag <= 25'd2;
 		end
-		23'bxxxxxxxxxxxxxxxxxxxx100: begin
+		25'bxxxxxxxxxxxxxxxxxxxxxx100: begin
 			//draw//
 			//vga_sram_write <= 1'b1;
 			// compute address
 			vga_sram_address <= vga_out_base_address + {22'b0, vga_x_cood[2]} + ({22'b0,vga_y_cood[2]}*640) ; 
 			// data
 			vga_sram_writedata <= color_reg[2];
-			draw_flag <= 23'd4;
+			draw_flag <= 25'd4;
 		end
-		23'bxxxxxxxxxxxxxxxxxxx1000: begin
+		25'bxxxxxxxxxxxxxxxxxxxxx1000: begin
 			//draw//
 			//vga_sram_write <= 1'b1;
 			// compute address
 			vga_sram_address <= vga_out_base_address + {22'b0, vga_x_cood[3]} + ({22'b0,vga_y_cood[3]}*640) ; 
 			// data
 			vga_sram_writedata <= color_reg[3];
-			draw_flag <= 20'd8;
+			draw_flag <= 25'd8;
 		end
-		23'bxxxxxxxxxxxxxxxxxx10000: begin
+		25'bxxxxxxxxxxxxxxxxxxxx10000: begin
 			//draw//
 			//vga_sram_write <= 1'b1;
 			// compute address
 			vga_sram_address <= vga_out_base_address + {22'b0, vga_x_cood[4]} + ({22'b0,vga_y_cood[4]}*640) ; 
 			// data
 			vga_sram_writedata <= color_reg[4];
-			draw_flag <= 23'd16;
+			draw_flag <= 25'd16;
 		end
-		23'bxxxxxxxxxxxxxxxxx100000: begin
+		25'bxxxxxxxxxxxxxxxxxxx100000: begin
 			//draw//
 			//vga_sram_write <= 1'b1;
 			// compute address
 			vga_sram_address <= vga_out_base_address + {22'b0, vga_x_cood[5]} + ({22'b0,vga_y_cood[5]}*640) ; 
 			// data
 			vga_sram_writedata <= color_reg[5];
-			draw_flag <= 23'd32;
+			draw_flag <= 25'd32;
 		end
-		23'bxxxxxxxxxxxxxxxx1000000: begin
+		25'bxxxxxxxxxxxxxxxxxx1000000: begin
 			//draw//
 			//vga_sram_write <= 1'b1;
 			// compute address
 			vga_sram_address <= vga_out_base_address + {22'b0, vga_x_cood[6]} + ({22'b0,vga_y_cood[6]}*640) ; 
 			// data
 			vga_sram_writedata <= color_reg[6];
-			draw_flag <= 23'd64;
+			draw_flag <= 25'd64;
 		end
-		23'bxxxxxxxxxxxxxxx10000000: begin
+		25'bxxxxxxxxxxxxxxxxx10000000: begin
 			//draw//
 			//vga_sram_write <= 1'b1;
 			// compute address
 			vga_sram_address <= vga_out_base_address + {22'b0, vga_x_cood[7]} + ({22'b0,vga_y_cood[7]}*640) ; 
 			// data
 			vga_sram_writedata <= color_reg[7];
-			draw_flag <= 23'd128;
+			draw_flag <= 25'd128;
 		end
-		23'bxxxxxxxxxxxxxx100000000: begin
+		25'bxxxxxxxxxxxxxxxx100000000: begin
 			//draw//
 			//vga_sram_write <= 1'b1;
 			// compute address
 			vga_sram_address <= vga_out_base_address + {22'b0, vga_x_cood[8]} + ({22'b0,vga_y_cood[8]}*640) ; 
 			// data
 			vga_sram_writedata <= color_reg[8];
-			draw_flag <= 23'd256;
+			draw_flag <= 25'd256;
 		end
-		23'bxxxxxxxxxxxxx1000000000: begin
+		25'bxxxxxxxxxxxxxxx1000000000: begin
 			//draw//
 			//vga_sram_write <= 1'b1;
 			// compute address
 			vga_sram_address <= vga_out_base_address + {22'b0, vga_x_cood[9]} + ({22'b0,vga_y_cood[9]}*640) ; 
 			// data
 			vga_sram_writedata <= color_reg[9];
-			draw_flag <= 23'd512;
+			draw_flag <= 25'd512;
 		end
-		23'bxxxxxxxxxxxx10000000000: begin
+		25'bxxxxxxxxxxxxxx10000000000: begin
 			//draw//
 			//vga_sram_write <= 1'b1;
 			// compute address
 			vga_sram_address <= vga_out_base_address + {22'b0, vga_x_cood[10]} + ({22'b0,vga_y_cood[10]}*640) ; 
 			// data
 			vga_sram_writedata <= color_reg[10];
-			draw_flag <= 23'd1024;
+			draw_flag <= 25'd1024;
 		end
-		23'bxxxxxxxxxxx100000000000: begin
+		25'bxxxxxxxxxxxxx100000000000: begin
 			//draw//
 			//vga_sram_write <= 1'b1;
 			// compute address
 			vga_sram_address <= vga_out_base_address + {22'b0, vga_x_cood[11]} + ({22'b0,vga_y_cood[11]}*640) ; 
 			// data
 			vga_sram_writedata <= color_reg[11];
-			draw_flag <= 23'd2048;
+			draw_flag <= 25'd2048;
 		end
-		23'bxxxxxxxxxx1000000000000: begin
+		25'bxxxxxxxxxxxx1000000000000: begin
 			//draw//
 			//vga_sram_write <= 1'b1;
 			// compute address
 			vga_sram_address <= vga_out_base_address + {22'b0, vga_x_cood[12]} + ({22'b0,vga_y_cood[12]}*640) ; 
 			// data
 			vga_sram_writedata <= color_reg[12];
-			draw_flag <= 23'd4096;
+			draw_flag <= 25'd4096;
 		end
-		23'bxxxxxxxxx10000000000000: begin
+		25'bxxxxxxxxxxx10000000000000: begin
 			//draw//
 			//vga_sram_write <= 1'b1;
 			// compute address
 			vga_sram_address <= vga_out_base_address + {22'b0, vga_x_cood[13]} + ({22'b0,vga_y_cood[13]}*640) ; 
 			// data
 			vga_sram_writedata <= color_reg[13];
-			draw_flag <= 23'd8192;
+			draw_flag <= 25'd8192;
 		end
-		23'bxxxxxxxx100000000000000: begin
+		25'bxxxxxxxxxx100000000000000: begin
 			//draw//
 			//vga_sram_write <= 1'b1;
 			// compute address
 			vga_sram_address <= vga_out_base_address + {22'b0, vga_x_cood[14]} + ({22'b0,vga_y_cood[14]}*640) ; 
 			// data
 			vga_sram_writedata <= color_reg[14];
-			draw_flag <= 23'd16384;
+			draw_flag <= 25'd16384;
 		end
-		23'bxxxxxxx1000000000000000: begin
+		25'bxxxxxxxxx1000000000000000: begin
 			//draw//
 			//vga_sram_write <= 1'b1;
 			// compute address
 			vga_sram_address <= vga_out_base_address + {22'b0, vga_x_cood[15]} + ({22'b0,vga_y_cood[15]}*640) ; 
 			// data
 			vga_sram_writedata <= color_reg[15];
-			draw_flag <= 23'd32768;
+			draw_flag <= 25'd32768;
 		end
-		23'bxxxxxx10000000000000000: begin
+		25'bxxxxxxxx10000000000000000: begin
 			//draw//
 			//vga_sram_write <= 1'b1;
 			// compute address
 			vga_sram_address <= vga_out_base_address + {22'b0, vga_x_cood[16]} + ({22'b0,vga_y_cood[16]}*640) ; 
 			// data
 			vga_sram_writedata <= color_reg[16];
-			draw_flag <= 23'd65536;
+			draw_flag <= 25'd65536;
 		end
-		23'bxxxxx100000000000000000: begin
+		25'bxxxxxxx100000000000000000: begin
 			//draw//
 			//vga_sram_write <= 1'b1;
 			// compute address
 			vga_sram_address <= vga_out_base_address + {22'b0, vga_x_cood[17]} + ({22'b0,vga_y_cood[17]}*640) ; 
 			// data
 			vga_sram_writedata <= color_reg[17];
-			draw_flag <= 23'd131072;
+			draw_flag <= 25'd131072;
 		end
-		23'bxxxx1000000000000000000: begin
+		25'bxxxxxx1000000000000000000: begin
 			//draw//
 			//vga_sram_write <= 1'b1;
 			// compute address
 			vga_sram_address <= vga_out_base_address + {22'b0, vga_x_cood[18]} + ({22'b0,vga_y_cood[18]}*640) ; 
 			// data
 			vga_sram_writedata <= color_reg[18];
-			draw_flag <= 23'd262144;
+			draw_flag <= 25'd262144;
+		end
+		25'bxxxxx10000000000000000000: begin
+			//draw//
+			//vga_sram_write <= 1'b1;
+			// compute address
+			vga_sram_address <= vga_out_base_address + {22'b0, vga_x_cood[19]} + ({22'b0,vga_y_cood[19]}*640) ; 
+			// data
+			vga_sram_writedata <= color_reg[19];
+			draw_flag <= 25'd524288;
+		end
+		25'bxxxx100000000000000000000: begin
+			//draw//
+			//vga_sram_write <= 1'b1;
+			// compute address
+			vga_sram_address <= vga_out_base_address + {22'b0, vga_x_cood[20]} + ({22'b0,vga_y_cood[20]}*640) ; 
+			// data
+			vga_sram_writedata <= color_reg[20];
+			draw_flag <= 25'd1048576;
+		end
+		25'bxxx1000000000000000000000: begin
+			//draw//
+			//vga_sram_write <= 1'b1;
+			// compute address
+			vga_sram_address <= vga_out_base_address + {22'b0, vga_x_cood[21]} + ({22'b0,vga_y_cood[21]}*640) ; 
+			// data
+			vga_sram_writedata <= color_reg[21];
+			draw_flag <= 25'd2097152;
+		end
+		25'bxx10000000000000000000000: begin
+			//draw//
+			//vga_sram_write <= 1'b1;
+			// compute address
+			vga_sram_address <= vga_out_base_address + {22'b0, vga_x_cood[22]} + ({22'b0,vga_y_cood[22]}*640) ; 
+			// data
+			vga_sram_writedata <= color_reg[22];
+			draw_flag <= 25'd4194304;
+		end
+		25'bx100000000000000000000000: begin
+			//draw//
+			//vga_sram_write <= 1'b1;
+			// compute address
+			vga_sram_address <= vga_out_base_address + {22'b0, vga_x_cood[23]} + ({22'b0,vga_y_cood[23]}*640) ; 
+			// data
+			vga_sram_writedata <= color_reg[23];
+			draw_flag <= 25'd8388608;
+		end
+		25'b1000000000000000000000000: begin
+			//draw//
+			//vga_sram_write <= 1'b1;
+			// compute address
+			vga_sram_address <= vga_out_base_address + {22'b0, vga_x_cood[24]} + ({22'b0,vga_y_cood[24]}*640) ; 
+			// data
+			vga_sram_writedata <= color_reg[24];
+			draw_flag <= 25'd16777216;
 		end
 		default: begin
-			draw_flag <= 23'd0;
+			draw_flag <= 25'd0;
 		end
 	endcase
 end
@@ -623,7 +677,7 @@ end
 genvar i;
  generate
  
-    for (i = 0; i < 19; i = i + 1) begin: iterations
+    for (i = 0; i < 25; i = i + 1) begin: iterations
 		mandelbrot iter (
 		.clock(CLOCK_50),
 		.reset(reset[i]),
@@ -735,14 +789,16 @@ genvar i;
 				
 				if (draw_flag[i]) begin
 					done_flag[i] <= 1'b0;
-					vga_x_cood[i] <= vga_x_cood[i] + 19;
-					c_r[i] <= c_r[i] + 19*incr_x;
 					
-					if (vga_x_cood[i] > 10'd639) begin
+					if (vga_x_cood[i] + 25 > 10'd639) begin
 						vga_x_cood[i] <= i;
 						c_r[i] <= c_r_init + i*incr_x;
 						vga_y_cood[i] <= vga_y_cood[i] + 1;
 						c_i[i] <= c_i[i] - incr_y;
+					end
+					else begin
+						vga_x_cood[i] <= vga_x_cood[i] + 25;
+						c_r[i] <= c_r[i] + 25*incr_x;
 					end
 					
 					if (vga_y_cood[i] > 10'd479) begin
@@ -750,16 +806,18 @@ genvar i;
 					end
 					else begin
 						state[i] <= 8'd1;
+						reset[i] <= 1'b1;
 					end
 				end
 				else begin
 					state[i] <= 8'd2;
+					
 				end
 			end
 			
 			if (state[i] == 8'd3) begin
 				flag[i] = 1'b1;
-				if (i == 0 && flag == 23'b00001111111111111111111) begin
+				if (i == 0 && flag == 25'b1111111111111111111111111) begin
 					// only one iterator needs to signal done
 					// end vga write
 					vga_sram_write <= 1'b0;
