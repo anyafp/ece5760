@@ -431,7 +431,9 @@ reg [24:0] done_flag;
 
 reg [24:0] flag = 10'b0;
 
-wire [26:0] c_r_init, c_i_init;
+wire signed [26:0] c_r_init, c_i_init;
+
+//wire clk_100;
 
 //=======================================================
 // Arbiter
@@ -874,6 +876,7 @@ Computer_System The_System (
 	.incr_y_pio_ext_export  (incr_y), 
 	.arm_reset_pio_ext_export (arm_reset),
 	.max_iter_pio_ext_export  (max_iter),
+//	.pll_0_outclk0_clk (clk_100),
 
 	// AV Config
 	.av_config_SCLK							(FPGA_I2C_SCLK),
