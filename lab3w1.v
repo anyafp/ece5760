@@ -33,15 +33,17 @@ module testbench();
 
 	// Drum node variables
 	reg [17:0] rho_eff = 18'b0_00010000000000000;
-	reg signed [17:0] u_up = 18'b0;
+	reg signed [17:0] u_up;
 	reg signed [17:0] u;
-	reg signed [17:0] u_down = 18'b0;
+	reg signed [17:0] u_down;
 	reg signed [17:0] u_prev;
 	wire signed [17:0] u_next;
 	reg signed [17:0] u_bottom;
 
 	reg [2:0] state;
 	reg signed [17:0] output_val;
+	reg signed [17:0] int_val;
+	reg signed [17:0] init_val = 18'b0_00000011011010011;
 
 	// Index
 	reg [8:0] j;
@@ -71,47 +73,35 @@ module testbench();
 
 			drum node (
 				.rho_eff( rho_eff ),
-				.u( u ),
+				.u( ( j == 18'b0 ) ? u_bottom : u ),
 				.u_right( 18'b0 ),
 				.u_left( 18'b0 ),
-				.u_up( u_up ),
-				.u_down( u_down ),
+				.u_up( ( j == 18'd29 ) ? 18'b0 : u_up ),
+				.u_down( ( j == 18'b0  ) ? 18'b0 : u_down ),
 				.u_prev( u_prev ),
 				.u_next( u_next ) 
 			);
 
 			always @ ( posedge clk_50 ) begin
 
-
 				if ( ~reset ) begin
 					state <= 3'd0;
 				end
-				else 
+				else begin
 					// STATE 0 (RESET)
 					if ( state == 3'd0 ) begin
 						state <= 3'd1; 
-						j <= 0;
-						n <= 0; 
-						d <= 0;
-						d_prev <= 0; 
+						j <= 9'd0;
+						n <= 9'd0;
 					end
 					// STATE 1 (INIT)
 					else if ( state == 3'd1 ) begin
-						// bottom node values
-						if ( j == 9'd1 ) begin
-								u_bottom <= d;
-								u_prev <= d;
-								u <= d;
-						end
 
 						// Once all nodes are initialized
 						if ( j == 9'd30 ) begin
 							state <= 3'd2;
-							j <= 0;
+							j <= 9'd0;
 							we <= 1'b0;
-							w_add <= 1;
-							r_add <= 1;
-							d <= 0;
 						end
 						else begin
 							// initialize u and u_prev m10k blocks
@@ -122,66 +112,92 @@ module testbench();
 								w_add_prev <= j;
 								r_add <= j;
 								r_add_prev <= j;
-								d <= d + incr;
-								d_prev <= d_prev + incr;
+								d <= init_val;
+								d_prev <= init_val;
+								if ( j == 9'd0 ) u_bottom <= init_val;
+								init_val <= init_val + incr;
 							end
 							else begin
+								init_val <= init_val - incr;
 								we <= 1'b1;
 								we_prev <= 1'b1;
 								w_add <= j;
 								w_add_prev <= j;
 								r_add <= j;
 								r_add_prev <= j;
-								d <= d - incr;
-								d_prev <= d_prev - incr;
+								d <= init_val;
+								d_prev <= init_val;
 							end
-							j <= j + 1;
+							j <= j + 9'd1;
 							state <= 3'd1;
 						end
-
 					end
-					// STATE 2 (COMPUTE)
+					// STATE 2 (Set up read address)
 					else if ( state == 3'd2 ) begin
 
-						if ( j == 1 ) begin
-							u_bottom <= u_next; 
+						// If not at top
+						if ( j < 9'd29 ) begin
+							r_add <= j + 9'd1; // read u_up M10K
+							we <= 0;
 						end
 
-						// write m10k prev
-						we_prev <= 1'b1;
-						w_add_prev <= j;
-						d_prev <= u;
+						r_add_prev <= j; // read u_prev M10K 
+						we_prev <= 0;
 
-						// write m10k
+						state <= 3'd3;
+					
+					end
+					// STATE 3 (Wait for M10K to see read addr)
+					else if ( state == 3'd3 ) begin
+
+						state <= 3'd4;
+
+					end
+					// STATE 4 (Setting inputs)
+					else if ( state == 3'd4 ) begin
+
+					    // If not at top
+						if ( j < 9'd29 ) u_up <= q;
+
+						u_prev <= q_prev;
+
+						state <= 3'd5;
+
+					end
+					// STATE 5 (Get u_next and write and set up next row)
+					else if ( state == 3'd5 ) begin
+
 						we <= 1'b1;
 						w_add <= j;
 						d <= u_next;
 
-						u_down <= ( j == 9'd0 ) ? 0 : u;
-						u <= ( j == 9'd0 ) ? u_bottom : u_up;
-						u_up <= (j == 9'd29) ? 0 : q;
+						we_prev <= 1'b1;
+						w_add_prev <= j;
+						d_prev <= ( j == 9'd0 ) ? u_bottom : u;
 
-						// Done with all rows
-						if ( j == 9'd29 ) begin
-							state <= 3'd3;
-							j <= 0;
-							r_add <= 9'd15;
+						if ( j == 9'd15 ) int_val <= u;
+						if ( j == 9'd0 ) u_bottom <= u_next;
+
+						// Set up next row if not at top
+						if ( j < 9'd29 ) begin
+							u <= u_up;
+							u_down <= ( j == 9'd0 ) ? u_bottom : u;
+							j <= j + 9'd1;
+							state <= 3'd2;
 						end
 						else begin
-							j <= j + 1;
-							state <= 3'd2;
-							r_add <= j + 1;
+							n <= n + 9'd1;
+							j <= 9'd0;
+							state <= 3'd6;
 						end
 					end
-					// STATE 3 (AUDIO)
-					else if ( state == 3'd3 ) begin
-						n <= n + 8'd1;
-						output_val <= q;
+					// STATE 6 (Output value)
+					else if ( state == 3'd6 ) begin
+						output_val <= int_val;
 						state <= 3'd2;
 					end
+				end
 			end
-
-
 		end
 	endgenerate
 endmodule
