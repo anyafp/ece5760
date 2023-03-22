@@ -465,59 +465,46 @@ generate
 						j[i] <= 9'd0;
 						we[i] <= 1'b0;
 						if ( i == 0 ) drum_timer <= 0;
+						// read
+						r_add[i] <= 9'd1; // read u_up M10K
+						r_add_prev[i] <= 9'd0; // read u_prev M10K 
+						we_prev[i] <= 0;
 					end
 					else begin
 						// initialize u and u_prev m10k blocks
-								 we[i] <= 1'b1;
-								 we_prev[i] <= 1'b1;
-								 w_add[i] <= j[i];
-								 w_add_prev[i] <= j[i];
-								 r_add[i] <= j[i];
-								 r_add_prev[i] <= j[i];
-								 d[i] <= out_init_ampl[i];
-								 d_prev[i] <= out_init_ampl[i];
+						 we[i] <= 1'b1;
+						 we_prev[i] <= 1'b1;
+						 w_add[i] <= j[i];
+						 w_add_prev[i] <= j[i];
+						 r_add[i] <= j[i];
+						 r_add_prev[i] <= j[i];
+						 d[i] <= out_init_ampl[i];
+						 d_prev[i] <= out_init_ampl[i];
 
-								 if ( j[i] == 9'd0 ) u_bottom[i] <= out_init_ampl[i];
+						 if ( j[i] == 9'd0 ) u_bottom[i] <= out_init_ampl[i];
 						j[i] <= j[i] + 9'd1;
 						state_drum[i] <= 3'd1;
 					end
 				end
-				// STATE 2 (Set up read address)
+				// STATE 2 (Wait for M10K to see read addr)
 				else if ( state_drum[i] == 3'd2 ) begin
 					if ( i == 0 ) done_flag <= 1'b0;
 					if ( i == 0 ) drum_timer <= drum_timer + 1;
-
-					// If not at top
-					if ( j[i] < num_rows-9'd1 ) begin
-						r_add[i] <= j[i] + 9'd1; // read u_up M10K
-						we[i] <= 0;
-					end
-
-					r_add_prev[i] <= j[i]; // read u_prev M10K 
-					we_prev[i] <= 0;
-
 					state_drum[i] <= 3'd3;
-				
 				end
-				// STATE 3 (Wait for M10K to see read addr)
+				// STATE 3 (Setting inputs)
 				else if ( state_drum[i] == 3'd3 ) begin
 					if ( i == 0 ) drum_timer <= drum_timer + 1;
-					state_drum[i] <= 3'd4;
-
-				end
-				// STATE 4 (Setting inputs)
-				else if ( state_drum[i] == 3'd4 ) begin
-					if ( i == 0 ) drum_timer <= drum_timer + 1;
-					 // If not at top
+					// If not at top
 					if ( j[i] < num_rows-9'd1 ) u_up[i] <= q[i];
 
 					u_prev[i] <= q_prev[i];
 
-					state_drum[i] <= 3'd5;
+					state_drum[i] <= 3'd4;
 
 				end
-				// STATE 5 (Get u_next and write and set up next row)
-				else if ( state_drum[i] == 3'd5 ) begin
+				// STATE 4 (Get u_next and write and set up next row)
+				else if ( state_drum[i] == 3'd4 ) begin
 					if ( i == 0 ) drum_timer <= drum_timer + 1;
 					we[i] <= 1'b1;
 					w_add[i] <= j[i];
@@ -536,15 +523,23 @@ generate
 						u_down[i] <= ( j[i] == 9'd0 ) ? u_bottom[i] : u[i];
 						j[i] <= j[i] + 9'd1;
 						state_drum[i] <= 3'd2;
+						// read
+						// If not at top
+						if ( j[i] + 9'd1 < num_rows-9'd1 ) begin
+							r_add[i] <= j[i] + 9'd2; // read u_up M10K
+						end
+						r_add_prev[i] <= j[i] + 9'd1; // read u_prev M10K
 					end
 					else begin
 						n[i] <= n[i] + 9'd1;
 						j[i] <= 9'd0;
-						state_drum[i] <= 3'd6;
+						state_drum[i] <= 3'd5;
 					end
+
 				end
-				// STATE 6 (Output value)
-				else if ( state_drum[i] == 3'd6 ) begin
+				// STATE 5 (Output value)
+				else if ( state_drum[i] == 3'd5 ) begin
+					// nonlinear rho
 					if ( i == 0 ) begin
 						output_val <= int_val;
 						if ( rho_0 + u_g < 18'b0_01111101011100001 ) begin
@@ -557,11 +552,16 @@ generate
 					end
 					if ( audio_done == 1'b1 ) begin
 						state_drum[i] <= 3'd2;
+						if ( i == 0 ) final_time <= drum_timer;
 						if ( i == 0 ) drum_timer <= 1'b0;
+						r_add[i] <= j[i] + 9'd1; // read u_up M10K
+						we[i] <= 0;
+						r_add_prev[i] <= j[i]; // read u_prev M10K 
+						we_prev[i] <= 0;
 					end
 					else begin
-						state_drum[i] <= 3'd6;
-						if ( i == 0 ) final_time <= drum_timer;
+						state_drum[i] <= 3'd5;
+						if ( i == 0 ) drum_timer <= drum_timer + 1;
 					end
 				end
 			end
@@ -660,6 +660,7 @@ always @(posedge CLOCK_50) begin //CLOCK_50
 		bus_addr <= audio_left_address ;
 		bus_byte_enable <= 4'b1111;
 		bus_write <= 1'b1 ;
+		audio_done <= 1'b1;
 	end	
 	// if no space, try again later
 	else if (state==4'd2 && fifo_space<=8'd2) begin
@@ -677,7 +678,7 @@ always @(posedge CLOCK_50) begin //CLOCK_50
 	// -- now the right channel
 	if (state==4'd4) begin // 
 		state <= 4'd5;	
-		bus_write_data <=  output_val <<< 14 ;
+//		bus_write_data <=  output_val <<< 14 ;
 		bus_addr <= audio_right_address ;
 		bus_write <= 1'b1 ;
 	end	
@@ -688,7 +689,6 @@ always @(posedge CLOCK_50) begin //CLOCK_50
 	if (state==4'd5 && bus_ack==1) begin
 		state <= 4'd0 ;
 		bus_write <= 0;
-		audio_done <= 1'b1;
 	end
 	
 end // always @(posedge state_clock)
