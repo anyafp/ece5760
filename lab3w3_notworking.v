@@ -376,22 +376,22 @@ assign HEX0 = 7'b1111111;
 //=======================================================
 
 // M10K variables
-wire signed [17:0] q [59:0], q_prev [59:0]; // read value
-reg signed [17:0] d [59:0], d_prev [59:0]; // write value
-reg [8:0] w_add [59:0], w_add_prev [59:0];
-reg [8:0] r_add [59:0], r_add_prev [59:0];
-reg [59:0] we, we_prev;
+wire signed [17:0] q [29:0], q_prev [29:0]; // read value
+reg signed [17:0] d [29:0], d_prev [29:0]; // write value
+reg [8:0] w_add [29:0], w_add_prev [29:0];
+reg [8:0] r_add [29:0], r_add_prev [29:0];
+reg [29:0] we, we_prev;
 
 // Drum node variables
 reg [17:0] rho_eff = 18'b0_00010000000000000;
-reg signed [17:0] u_up [59:0];
-reg signed [17:0] u [59:0];
-reg signed [17:0] u_down [59:0];
-reg signed [17:0] u_prev [59:0];
-wire signed [17:0] u_next [59:0];
-reg signed [17:0] u_bottom [59:0];
+reg signed [17:0] u_up [29:0];
+reg signed [17:0] u [29:0];
+reg signed [17:0] u_down [29:0];
+reg signed [17:0] u_prev [29:0];
+wire signed [17:0] u_next [29:0];
+reg signed [17:0] u_bottom [29:0];
 
-reg [2:0] state_drum [59:0];
+reg [2:0] state_drum [29:0];
 reg signed [17:0] output_val;
 reg signed [17:0] int_val;
 reg done_flag = 1'b0;
@@ -402,11 +402,11 @@ reg signed [17:0] rho_0 = 18'b0_01000000000000000;
 reg [31:0] drum_timer ;
 reg [31:0] final_time;
 
-wire signed [17:0] out_init_ampl [59:0];
+wire signed [17:0] out_init_ampl [29:0];
 
 // Index
-reg [8:0] j [59:0];
-reg [8:0] n [59:0];
+reg [8:0] j [29:0];
+reg [8:0] n [29:0];
 
 wire arm_reset;
 wire [31:0] arm_incr;
@@ -415,27 +415,31 @@ wire [31:0] arm_rows;
 
 reg [8:0] num_rows = 9'd30;
 wire [8:0] half_rows;
-
 assign half_rows = num_rows>>1;
 
+reg init_reset[29:0];
+wire init_done[29:0];
+reg [29:0] total_done = 20'b0;
+
 // Initializing node variables
-reg [17:0] incr = 18'b0_00000101000111101;
+reg [17:0] incr = 18'b0_00000100000000000;
+//reg [17:0] incr = 18'b0_00000101000111101;
 
 signed_mult mul_rho ( .out(u_g), .a(int_val >>> arm_rho), .b(int_val >>> arm_rho) );
 
 genvar i;
 generate
-	for ( i = 0; i < 60; i = i + 1 ) begin: cols
+	for ( i = 0; i < 30; i = i + 1 ) begin: cols
 
 		M10K_512_20 m10k ( q[i], d[i], w_add[i], r_add[i], we[i], CLOCK_50 );
 		M10K_512_20 m10k_prev ( q_prev[i], d_prev[i], w_add_prev[i], r_add_prev[i], we_prev[i], CLOCK_50 );
-		pyramid_init init_vals ( .out(out_init_ampl[i]), .i(i[8:0]), .j(j[i]), .total_i(9'd59), .total_j(num_rows-9'd1), .incr(incr) );
-			
+		pyramid_init init_vals ( .out(out_init_ampl[i]), .clock(CLOCK_50), .reset(init_reset[i]), .done(init_done[i]), .i(i[8:0]), .j(j[i]), .total_i(9'd29), .total_j(num_rows-9'd1), .incr(incr) );
+		
 		drum node (
 			.rho_eff( rho_eff ),
 			.u( ( j[i] == 9'b0 ) ? u_bottom[i] : u[i] ),
 			.u_right( ( i == 0 ) ? 18'd0 : ( j[i] == 9'b0 ) ? u_bottom[i-1] : u[i-1] ),
-			.u_left( ( i == 59 ) ? 18'd0 : ( j[i] == 9'b0 ) ? u_bottom[i+1] : u[i+1] ),
+			.u_left( ( i == 29 ) ? 18'd0 : ( j[i] == 9'b0 ) ? u_bottom[i+1] : u[i+1] ),
 			.u_up( ( j[i] == num_rows-9'd1 ) ? 18'b0 : u_up[i] ),
 			.u_down( ( j[i] == 9'b0  ) ? 18'b0 : u_down[i] ),
 			.u_prev( u_prev[i] ),
@@ -446,6 +450,7 @@ generate
 
 			if ( ~arm_reset || ~KEY[0] ) begin
 				state_drum[i] <= 3'd0;
+				init_reset[i] <= 0;
 			end
 			else begin
 				// STATE 0 (RESET)
@@ -455,52 +460,71 @@ generate
 					n[i] <= 9'd0;
 					if ( i == 0 ) num_rows <= arm_rows[8:0];
 					if ( i == 0 ) incr <= arm_incr[17:0];
+					init_reset[i] <= 1;
 				end
 				// STATE 1 (INIT)
 				else if ( state_drum[i] == 3'd1 ) begin
+				
+					// when all columns are done with initializing
+					if ( total_done == 30'd1073741823 ) begin
+						 state_drum[i] <= 3'd2;
+						 j[i] <= 9'd0;
+						if ( i == 0 ) drum_timer <= 0;
+						// read
+						r_add[i] <= 9'd1; // read u_up M10K
+						r_add_prev[i] <= 9'd0; // read u_prev M10K 
+						
+					end
 
 					// Once all nodes are initialized
-					if ( j[i] == num_rows ) begin
-						state_drum[i] <= 3'd2;
-						j[i] <= 9'd0;
+					else if ( j[i] == num_rows ) begin
+						
+						total_done[i] <= 1'b1;
+                  init_reset[i] <= 0;
+						we_prev[i] <= 1'b0;
 						we[i] <= 1'b0;
-						if ( i == 0 ) drum_timer <= 0;
-						// read setup
-						r_add[i] <= 9'd1; // read u_up M10K
-						we[i] <= 0;
-						r_add_prev[i] <= 9'd0; // read u_prev M10K 
-						we_prev[i] <= 0;
 					end
 					else begin
-						// initialize u and u_prev m10k blocks
-						 we[i] <= 1'b1;
-						 we_prev[i] <= 1'b1;
-						 w_add[i] <= j[i];
-						 w_add_prev[i] <= j[i];
-						 r_add[i] <= j[i];
-						 r_add_prev[i] <= j[i];
-						 d[i] <= out_init_ampl[i];
-						 d_prev[i] <= out_init_ampl[i];
+						init_reset[i] <= 1;
+						if ( init_done[i] == 1 ) begin
+							// initialize u and u_prev m10k blocks
+							 we[i] <= 1'b1;
+							 we_prev[i] <= 1'b1;
+							 w_add[i] <= j[i];
+							 w_add_prev[i] <= j[i];
+							 r_add[i] <= j[i];
+							 r_add_prev[i] <= j[i];
+							 d[i] <= out_init_ampl[i];
+							 d_prev[i] <= out_init_ampl[i];
 
-						if ( j[i] == 9'd0 ) u_bottom[i] <= out_init_ampl[i];
-						j[i] <= j[i] + 9'd1;
-						state_drum[i] <= 3'd1;
+							 if ( j[i] == 9'd0 ) u_bottom[i] <= out_init_ampl[i];
+							j[i] <= j[i] + 9'd1;
+							state_drum[i] <= 3'd6;
+							init_reset[i] <= 0;
+						end
+						
 					end
 				end
+				// STATE 6 (let init module see the reset)
+			  else if ( state_drum[i] == 3'd6 ) begin
+					state_drum[i] <= 3'd1;
+					init_reset[i] <= 1;
+			  end
 				// STATE 2 (Wait for M10K to see read addr)
 				else if ( state_drum[i] == 3'd2 ) begin
+					if ( i == 0 ) done_flag <= 1'b0;
 					if ( i == 0 ) drum_timer <= drum_timer + 1;
-
 					state_drum[i] <= 3'd3;
-				
 				end
 				// STATE 3 (Setting inputs)
 				else if ( state_drum[i] == 3'd3 ) begin
 					if ( i == 0 ) drum_timer <= drum_timer + 1;
-					 // If not at top
+					// If not at top
 					if ( j[i] < num_rows-9'd1 ) u_up[i] <= q[i];
 
 					u_prev[i] <= q_prev[i];
+
+					state_drum[i] <= 3'd4;
 
 				end
 				// STATE 4 (Get u_next and write and set up next row)
@@ -514,7 +538,7 @@ generate
 					w_add_prev[i] <= j[i];
 					d_prev[i] <= ( j[i] == 9'd0 ) ? u_bottom[i] : u[i];
 
-					if ( j[i] == half_rows && i == 30 ) int_val <= u[i];
+					if ( j[i] == half_rows && i == 15 ) int_val <= u[i];
 					if ( j[i] == 9'd0 ) u_bottom[i] <= u_next[i];
 
 					// Set up next row if not at top
@@ -523,14 +547,12 @@ generate
 						u_down[i] <= ( j[i] == 9'd0 ) ? u_bottom[i] : u[i];
 						j[i] <= j[i] + 9'd1;
 						state_drum[i] <= 3'd2;
-						// read setup
+						// read
 						// If not at top
-						if ( (j[i] + 9'd1) < num_rows-9'd1 ) begin
+						if ( j[i] + 9'd1 < num_rows-9'd1 ) begin
 							r_add[i] <= j[i] + 9'd2; // read u_up M10K
 						end
-
 						r_add_prev[i] <= j[i] + 9'd1; // read u_prev M10K
-
 					end
 					else begin
 						n[i] <= n[i] + 9'd1;
@@ -541,6 +563,7 @@ generate
 				end
 				// STATE 5 (Output value)
 				else if ( state_drum[i] == 3'd5 ) begin
+					// nonlinear rho
 					if ( i == 0 ) begin
 						output_val <= int_val;
 						if ( rho_0 + u_g < 18'b0_01111101011100001 ) begin
@@ -555,42 +578,16 @@ generate
 						state_drum[i] <= 3'd2;
 						if ( i == 0 ) final_time <= drum_timer;
 						if ( i == 0 ) drum_timer <= 1'b0;
-						// read setup
-						// If not at top
-						if ( j[i] < num_rows-9'd1 ) begin
-							r_add[i] <= j[i] + 9'd1; // read u_up M10K
-							we[i] <= 0;
-						end
-
+						r_add[i] <= j[i] + 9'd1; // read u_up M10K
+						we[i] <= 0;
 						r_add_prev[i] <= j[i]; // read u_prev M10K 
 						we_prev[i] <= 0;
-						if ( i == 0 ) done_flag <= 1'b0;
 					end
 					else begin
 						state_drum[i] <= 3'd5;
+						if ( i == 0 ) drum_timer <= drum_timer + 1;
 					end
 				end
-				// STATE 6 (Output value)
-//				else if ( state_drum[i] == 3'd6 ) begin
-//					if ( i == 0 ) begin
-//						output_val <= int_val;
-//						if ( rho_0 + u_g < 18'b0_01111101011100001 ) begin
-//							rho_eff <= rho_0 + u_g;
-//						end
-//						else begin
-//							rho_eff <= 18'b0_01111101011100001;
-//						end
-//						done_flag <= 1'b1;
-//					end
-//					if ( audio_done == 1'b1 ) begin
-//						state_drum[i] <= 3'd2;
-//						if ( i == 0 ) drum_timer <= 1'b0;
-//					end
-//					else begin
-//						state_drum[i] <= 3'd6;
-//						if ( i == 0 ) final_time <= drum_timer;
-//					end
-//				end
 			end
 		end
 	end
@@ -640,7 +637,6 @@ assign GPIO_0[1] = bus_read ;
 assign GPIO_0[2] = bus_ack ;
 //assign GPIO_0[3] = ??? ;
 
-
 always @(posedge CLOCK_50) begin //CLOCK_50
 
 	// reset state machine and read/write controls
@@ -671,6 +667,7 @@ always @(posedge CLOCK_50) begin //CLOCK_50
 		fifo_space <= (bus_read_data>>24) ;
 		// end the read
 		bus_read <= 1'b0 ;
+		audio_done <= 1'b0;
 	end
 	
 	// When there is room in the FIFO
@@ -700,13 +697,12 @@ always @(posedge CLOCK_50) begin //CLOCK_50
 	if (state==4'd3 && bus_ack==1) begin
 		state <= 4'd4 ;
 		bus_write <= 0;
-		audio_done <= 1'b0;
 	end
 	
 	// -- now the right channel
 	if (state==4'd4) begin // 
 		state <= 4'd5;	
-		//bus_write_data <=  output_val <<< 14 ;
+//		bus_write_data <=  output_val <<< 14 ;
 		bus_addr <= audio_right_address ;
 		bus_write <= 1'b1 ;
 	end	
@@ -1221,21 +1217,40 @@ endmodule
 //// calc initial amplitude ///////////
 //////////////////////////////////////////////////
 
-module pyramid_init (out, i, j, total_i, total_j, incr);
+module pyramid_init (out, clock, reset, done, i, j, total_i, total_j, incr);
     output signed [17:0] out;
+	output done;
     input [8:0] i;
     input [8:0] j;
     input [8:0] total_i;
     input [8:0] total_j;
     input [17:0] incr;
+	input clock; 
+	input reset;
 
     wire [8:0] int_i, int_j, int_out;
+    reg signed [17:0] out_temp;
+    reg [8:0] count; 
+	 
+    always @ (posedge clock) begin 
+        if (~reset) begin 
+            count <= 0;
+            out_temp <= 0;
+        end
+        else if ( done == 0 ) begin
+            out_temp <= out_temp + incr;
+            count <= count + 1;
+        end
+    end
 
     assign int_i = ( ( total_i - i ) >= i ) ? i : ( total_i - i );
     assign int_j = ( ( total_j - j ) >= j ) ? j : ( total_j - j );
 
     assign int_out = ( int_i >= int_j ) ? int_j : int_i;
 
-    assign out = ( int_out + 9'd1 ) * incr;
+    assign out = out_temp;
+	 
+    assign done = ( count >= (int_out + 9'd1) );
+	 
 endmodule
 //////////////////////////////////////////////////
