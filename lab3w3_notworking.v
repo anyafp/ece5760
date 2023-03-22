@@ -419,7 +419,7 @@ assign half_rows = num_rows>>1;
 
 reg init_reset[29:0];
 wire init_done[29:0];
-reg [29:0] total_done = 20'b0;
+reg [29:0] total_done = 30'b0;
 
 // Initializing node variables
 reg [17:0] incr = 18'b0_00000100000000000;
@@ -485,7 +485,7 @@ generate
 						we[i] <= 1'b0;
 					end
 					else begin
-						init_reset[i] <= 1;
+						// init_reset[i] <= 1;
 						if ( init_done[i] == 1 ) begin
 							// initialize u and u_prev m10k blocks
 							 we[i] <= 1'b1;
@@ -578,9 +578,9 @@ generate
 						state_drum[i] <= 3'd2;
 						if ( i == 0 ) final_time <= drum_timer;
 						if ( i == 0 ) drum_timer <= 1'b0;
-						r_add[i] <= j[i] + 9'd1; // read u_up M10K
+						r_add[i] <= 9'd1; // read u_up M10K
 						we[i] <= 0;
-						r_add_prev[i] <= j[i]; // read u_prev M10K 
+						r_add_prev[i] <= 9'd0; // read u_prev M10K 
 						we_prev[i] <= 0;
 					end
 					else begin
