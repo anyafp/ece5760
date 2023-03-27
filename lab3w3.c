@@ -65,19 +65,25 @@ int fd;
 #define INCR_PIO                  0x20
 #define RHO_PIO                   0x30
 #define NROWS_PIO                 0x40
+#define RHO_0_PIO                 0x50
 
 volatile unsigned int* timer_pio_ptr = NULL;
 volatile unsigned char* rst_pio_ptr = NULL;
 volatile unsigned int* incr_pio_ptr = NULL;
 volatile unsigned int* rho_pio_ptr = NULL;
 volatile unsigned int* nrows_pio_ptr = NULL;
+volatile signed int* rho_0_pio_ptr = NULL;
 
 int float2fix(float);
 int float2fix(float a) { return (int)(a*262144); }
 
+float fix2float(int);
+float fix2float(int a) { return ((float)a) / 262144; }
+
 int temp_rows = 30;
 int temp_rho = 3;
 float temp_ampl = 0.4;
+float temp_rho_0 = 0.25;
 int choose_int = 0;   // which setting to change
 
 ///////////////////////////////////////////////////////////////
@@ -89,7 +95,7 @@ void * scan_thread() {
   while (1) {
   
     // Which category to change?
-    printf("0: print time, 1: num rows, 2: rho gain, 3: init ampl -- ");
+    printf("0: print time, 1: num rows, 2: rho gain, 3: init ampl, 4: rho_0 -- ");
     scanf("%i", &choose_int);
     
     switch ( choose_int ) {
@@ -122,8 +128,17 @@ void * scan_thread() {
       case 3: // pause/resume
         printf("Enter init ampl: ");
         scanf("%f", &temp_ampl);
-        float incr = temp_ampl / temp_rows;
+        float incr = temp_ampl / 15;
+        printf ("incr = %f\n", incr);
         *(incr_pio_ptr) = float2fix(incr);
+        *(rst_pio_ptr) = 0;
+        usleep( 1 );
+      	*(rst_pio_ptr) = 1;
+       
+      case 4: // pause/resume
+        printf("Enter rho_0: ");
+        scanf("%f", &temp_rho_0);
+        *(rho_0_pio_ptr) = float2fix(temp_rho_0);
         *(rst_pio_ptr) = 0;
         usleep( 1 );
       	*(rst_pio_ptr) = 1;
@@ -170,6 +185,7 @@ int main(void)
   incr_pio_ptr = (unsigned int *)(h2p_lw_virtual_base + INCR_PIO);
   rho_pio_ptr = (unsigned int *)(h2p_lw_virtual_base + RHO_PIO);
   nrows_pio_ptr = (unsigned int *)(h2p_lw_virtual_base + NROWS_PIO);
+  rho_0_pio_ptr = (signed int *)(h2p_lw_virtual_base + RHO_0_PIO);
  
 	// === get VGA char addr =====================
 	// get virtual addr that maps to physical
@@ -214,12 +230,17 @@ int main(void)
 	
 	count = 0;
  
-  *(incr_pio_ptr) = float2fix(0.01);
+  *(incr_pio_ptr) = float2fix(0.0005);
   *(rho_pio_ptr) = 3;
-  *(nrows_pio_ptr) = 120;
+  *(nrows_pio_ptr) = 100;
+  *(rho_0_pio_ptr) = float2fix(0.25);
   *(rst_pio_ptr) = 0;
   usleep( 1 );
 	*(rst_pio_ptr) = 1;
+ 
+//  while (1) {
+//    printf("Output Val = %f\n", fix2float(*(output_pio_ptr)) );
+//  }
  
   // thread identifiers
    pthread_t thread_scan;
@@ -236,6 +257,8 @@ int main(void)
    pthread_join( thread_scan, NULL );
    return 0;
 } // end main
+
+
 
 
 
