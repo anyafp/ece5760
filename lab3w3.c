@@ -135,6 +135,8 @@ void * scan_thread() {
         usleep( 1 );
       	*(rst_pio_ptr) = 1;
        
+       break;
+       
       case 4: // pause/resume
         printf("Enter rho_0: ");
         scanf("%f", &temp_rho_0);
@@ -257,6 +259,8 @@ int main(void)
    pthread_join( thread_scan, NULL );
    return 0;
 } // end main
+
+
 
 
 
