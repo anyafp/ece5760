@@ -588,7 +588,6 @@ generate
 					end
 					if ( audio_done == 1'b1 ) begin
 						state_drum[i] <= 3'd2;
-						if ( i == 0 ) final_time <= drum_timer;
 						if ( i == 0 ) drum_timer <= 1'b0;
 						r_add[i] <= 9'd1; // read u_up M10K
 						we[i] <= 0;
@@ -597,7 +596,8 @@ generate
 					end
 					else begin
 						state_drum[i] <= 3'd5;
-						if ( i == 0 ) drum_timer <= drum_timer + 1;
+						if ( i == 0 ) final_time <= drum_timer;
+						//if ( i == 0 ) drum_timer <= drum_timer + 1;
 					end
 				end
 			end
@@ -773,7 +773,7 @@ Computer_System The_System (
 	.rho_gain_pio_ext_export (arm_rho),
 	.num_rows_pio_ext_export (arm_rows), 
 	.rho_init_pio_ext_export (arm_rho_init),  
-	.pll_0_outclk0_clk (CLOCK_100),
+//	.pll_0_outclk0_clk (CLOCK_100),
 	
 	
 	////////////////////////////////////
@@ -1257,15 +1257,15 @@ module pyramid_init (out, clock, reset, done, i, j, total_i, total_j, incr);
         end
     end
 
-    assign int_i = ( ( total_i - i ) >= i ) ? i : ( total_i - i );
-    assign int_j = ( ( total_j - j ) >= j ) ? j : ( total_j - j );
-
-    assign int_out = ( int_i >= int_j ) ? int_j : int_i;
+//    assign int_i = ( ( total_i - i ) >= i ) ? i : ( total_i - i );
+//    assign int_j = ( ( total_j - j ) >= j ) ? j : ( total_j - j );
+//
+//    assign int_out = ( int_i >= int_j ) ? int_j : int_i;
 
     assign out = out_temp;
 	 
-    assign done = ( count >= (int_out + 9'd1) );
-//	 assign done = ( count >= (i + 9'd1) ) || ( count >= (j + 9'd1) ) || ( count >= (total_i - i + 9'd1) ) || ( count >= (total_j - j + 9'd1) );
+//    assign done = ( count >= (int_out + 9'd1) );
+	 assign done = ( count >= (i + 9'd1) ) || ( count >= (j + 9'd1) ) || ( count >= (total_i - i + 9'd1) ) || ( count >= (total_j - j + 9'd1) );
 	 
 endmodule
 //////////////////////////////////////////////////
