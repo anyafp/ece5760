@@ -1,5 +1,7 @@
 
 
+
+
 module DE1_SoC_Computer (
 	////////////////////////////////////
 	// FPGA Pins
@@ -410,7 +412,7 @@ reg [7:0] color_reg = 8'b11111111;
 
 //=======================================================
 
-reg         [ 7:0] state;
+reg         [ 7:0] state = 8'd5;
 
 //=======================================================
 // 1 particle
@@ -418,6 +420,8 @@ reg         [ 7:0] state;
 
 wire [9:0] box_size;
 reg [9:0] x_, y_;
+reg [9:0] x_erase = 0; 
+reg [9:0] y_erase = 0;
 reg signed [9:0] vx, vy;
 wire [9:0] x_next, x_prev, y_next, y_prev;
 wire signed [9:0] vx_next, vx_prev, vy_next, vy_prev;
@@ -443,9 +447,16 @@ always @(posedge CLOCK_50) begin
 	// reset state machine and read/write controls
 	if (~KEY[0]) begin
 		state <= 0 ;
-		vga_sram_write <= 1'b0 ; // set to on if a write operation to bus
-		x_ <= 10'd30;
-		y_ <= 10'd30;
+		
+		// clear last write before reset
+		vga_sram_write <= 1'b1;
+		vga_sram_address <= vga_out_base_address + {22'b0, x_erase} + ({22'b0,y_erase}*640) ; 
+		vga_sram_writedata <= 8'b00000000; // black
+		
+		x_ <= 10'd100;
+		y_ <= 10'd100;
+		x_erase <= 10'd100;
+		y_erase <= 10'd100;
 		vx <= 10'd1;
 		vy <= 10'd1;
 	end
@@ -454,26 +465,33 @@ always @(posedge CLOCK_50) begin
 
 		// STATE 0: INITIALIZE
 		if (state == 8'd0) begin
-			// end vga write
-			vga_sram_write <= 1'b0;
 			state <= 8'd1;
 			count <= 20'd0;
+			vga_sram_write <= 1'b1;
+			vga_sram_address <= vga_out_base_address + {22'b0, x_erase} + ({22'b0,y_erase}*640) ; 
+			vga_sram_writedata <= 8'b00000000; // black
 		end
 	
 		// STATE 1: DRAW
-		if (state == 8'd1) begin
+		else if (state == 8'd1) begin
 			vga_sram_write <= 1'b1;
 			vga_sram_address <= vga_out_base_address + {22'b0, x_} + ({22'b0,y_}*640) ; 
-			vga_sram_writedata <= color_reg;
+			vga_sram_writedata <= color_reg; // white
+			x_erase <= x_;
+			y_erase <= y_;
 			x_ <= x_next;
 			y_ <= y_next;
 			vx <= vx_next;
 			vy <= vy_next;
 			state <= 8'd2;
 		end
+		
 	
 		// STATE 2: WAIT 1000 CYCLES
-		if (state == 8'd2) begin
+		else if (state == 8'd2) begin
+		
+			vga_sram_write <= 1'b0;
+			
 			count <= count + 20'b1;
 			
 			if ( count > 20'd1000000 )
@@ -522,13 +540,17 @@ Computer_System The_System (
 	.onchip_vga_buffer_s1_writedata  (vga_sram_writedata),   
 	
 	// HPS
-	.mouse_x_pio_ext_export (c_r_init),
-	.mouse_y_pio_ext_export (c_i_init),
-	.incr_x_pio_ext_export  (incr_x),
-	.incr_y_pio_ext_export  (incr_y), 
-	.arm_reset_pio_ext_export (arm_reset),
-	.max_iter_pio_ext_export  (max_iter),
+//	.mouse_x_pio_ext_export (c_r_init),
+//	.mouse_y_pio_ext_export (c_i_init),
+//	.incr_x_pio_ext_export  (incr_x),
+//	.incr_y_pio_ext_export  (incr_y), 
+//	.arm_reset_pio_ext_export (arm_reset),
+//	.max_iter_pio_ext_export  (max_iter),
 //	.pll_0_outclk0_clk (clk_100),
+
+
+	.x_pos_pio_ext_export(x_next),            //         
+	.y_pos_pio_ext_export(y_next),           //
 
 	// AV Config
 	.av_config_SCLK							(FPGA_I2C_SCLK),
@@ -720,61 +742,7 @@ module particle (
     
 endmodule
 
-//////////////////////////////////////////////////
-//// mandelbrot //////////////////////////////////
-//////////////////////////////////////////////////
 
-module mandelbrot (
-    clock,
-    reset,
-    c_r,
-    c_i,
-    max_iter,
-    total_iter, 
-    done);
-
-    input   clock, reset;
-    input   signed [26:0] c_r, c_i;
-    input [15:0] max_iter;
-    output [15:0] total_iter;
-    output done;
-
-    wire signed [26:0] z_r_sq, z_i_sq, z_r_i;
-    reg signed [26:0] z_r, z_i; 
-    wire signed [26:0] z_r_temp, z_i_temp;
-    reg [15:0] temp_iter;
-    wire int_done_r, int_done_i, int_done;
-
-
-	always @ (posedge clock) begin
-		if (reset == 0) begin
-            z_r <= 0; 
-            z_i <= 0;
-            temp_iter <= 0;
-      end
-		else if (done == 0) begin
-				z_r <= z_r_temp;
-				z_i <= z_i_temp;
-				temp_iter <= temp_iter + 1;
-      end
-	end
-
-    signed_mult sign_mult_z_r(.out(z_r_sq), .a(z_r), .b(z_r));
-    signed_mult sign_mult_z_i(.out(z_i_sq), .a(z_i), .b(z_i));
-    signed_mult sign_mult_z_i_r(.out(z_r_i), .a(z_r), .b(z_i));
-	 
-    assign z_r_temp = z_r_sq - z_i_sq + c_r;
-    assign z_i_temp = ( z_r_i <<< 1 ) + c_i;
-
-    // check each one more than 2
-    assign int_done_r = ( ( z_r ) > 27'sb0010_00000000000000000000000 ) || ( ( z_r ) < -27'sb0010_00000000000000000000000 );
-    assign int_done_i = ( ( z_i ) > 27'sb0010_00000000000000000000000 ) || ( ( z_i ) < -27'sb0010_00000000000000000000000 );
-    assign int_done = int_done_r | int_done_i;
-
-    assign done = ( int_done == 1 ) || ( ( z_r_sq + z_i_sq ) > 27'sb0100_00000000000000000000000 ) || ( temp_iter == max_iter );
-    assign total_iter = temp_iter;
-
-endmodule
 
 //////////////////////////////////////////////////
 //// signed mult of 4.23 format 2'comp ///////////
