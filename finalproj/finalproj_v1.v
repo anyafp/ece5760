@@ -1,7 +1,5 @@
 
 
-
-
 module DE1_SoC_Computer (
 	////////////////////////////////////
 	// FPGA Pins
@@ -374,139 +372,205 @@ HexDigit Digit1(HEX1, hex3_hex0[7:4]);
 HexDigit Digit2(HEX2, hex3_hex0[11:8]);
 HexDigit Digit3(HEX3, hex3_hex0[15:12]);
 
-//=======================================================
-// SRAM/VGA Iterator state machine
-//=======================================================
-// --Check for sram address=0 nonzero, which means that
-//   HPS wrote some new data.
-//
-// --clear sram address=0 to signal HPS
-//=======================================================
-// Controls for Qsys sram slave exported in system module
-//=======================================================
-wire [31:0] sram_readdata ;
-reg [31:0] data_buffer, sram_writedata ;
-reg [7:0] sram_address; 
-reg sram_write ;
-wire sram_clken = 1'b1;
-wire sram_chipselect = 1'b1;
+// VGA clock and reset lines
+wire vga_pll_lock ;
+wire vga_pll ;
+reg  vga_reset ;
 
-// rectangle corners
-reg [9:0] x1, y1, x2, y2 ;
-reg [31:0] timer ; // may need to throttle write-rate
-//=======================================================
-// Controls for VGA memory
-//=======================================================
-wire [31:0] vga_out_base_address = 32'h0000_0000 ;  // vga base addr
-reg [7:0] vga_sram_writedata ;
-reg [31:0] vga_sram_address; 
-reg vga_sram_write ;
-wire vga_sram_clken = 1'b1;
-wire vga_sram_chipselect = 1'b1;
+// M10k memory control and data
+wire 		[7:0] 	M10k_out ;
+reg 		[7:0] 	write_data ;
+reg 		[18:0] 	write_address ;
+reg 		[18:0] 	read_address ;
+reg 					write_enable ;
 
-//=======================================================
-// pixel address is
-reg [9:0] vga_x_cood;
-reg [9:0] vga_y_cood;
-reg [7:0] color_reg = 8'b11111111;
+// M10k memory clock
+wire 					M10k_pll ;
+wire 					M10k_pll_locked ;
+
+// Memory writing control registers
+reg 		[7:0] 	arbiter_state ;
+reg 		[9:0] 	x_coord ;
+reg 		[9:0] 	y_coord ;
+
+// Wires for connecting VGA driver to memory
+wire 		[9:0]		next_x ;
+wire 		[9:0] 	next_y ;
 
 //=======================================================
 
-reg         [ 7:0] state = 8'd5;
+reg         [ 7:0] state [9:0];
 
 //=======================================================
 // 1 particle
 //=======================================================
 
 wire [9:0] box_size;
-reg [9:0] x_, y_;
-reg [9:0] x_erase = 0; 
-reg [9:0] y_erase = 0;
-reg signed [9:0] vx, vy;
-wire [9:0] x_next, x_prev, y_next, y_prev;
-wire signed [9:0] vx_next, vx_prev, vy_next, vy_prev;
+reg [9:0] x_[9:0], y_[9:0];
+reg [9:0] x_erase[9:0];
+reg [9:0] y_erase[9:0];
+reg signed [9:0] vx[9:0], vy[9:0];
+wire [9:0] x_next[9:0], x_prev[9:0], y_next[9:0], y_prev[9:0];
+wire signed [9:0] vx_next[9:0], vx_prev[9:0], vy_next[9:0], vy_prev[9:0];
 
-reg [19:0] count;
+reg [19:0] count[9:0];
+reg [19:0] idx; 
 
 assign box_size = 10'd200;
- 
-particle particle1 (
-	  .x_prev(x_prev),
-	  .y_prev(y_prev),
-	  .vx_prev(vx_prev),
-	  .vy_prev(vy_prev),
-	  .box_length(box_size),
-	  .x_next(x_next),
-	  .y_next(y_next),
-	  .vx_next(vx_next),
-	  .vy_next(vy_next)
+
+
+genvar i;
+generate
+	for ( i = 0; i < 10; i = i + 1 ) begin: cols
+		
+		particle particle1 (
+			  .x_prev(x_prev[i]),
+			  .y_prev(y_prev[i]),
+			  .vx_prev(vx_prev[i]),
+			  .vy_prev(vy_prev[i]),
+			  .box_length(box_size),
+			  .x_next(x_next[i]),
+			  .y_next(y_next[i]),
+			  .vx_next(vx_next[i]),
+			  .vy_next(vy_next[i])
+		);
+
+		assign x_prev[i]  = x_[i];
+		assign y_prev[i]  = y_[i];
+		assign vx_prev[i] = vx[i];
+		assign vy_prev[i] = vy[i];
+
+		always@(posedge M10k_pll) begin
+			// Zero everything in reset
+			if (~KEY[0]) begin
+				state[i] <= 8'd0 ;
+				if ( i == 0 ) vga_reset <= 1'b_1 ;
+				x_[i] <= 10'd_10 * i ;
+				y_[i] <= 10'd_2 * i ;
+				x_erase[i] <= 10'd0;
+				y_erase[i] <= 10'd0;
+				vx[i] <= -10'd1 * i;
+				vy[i] <= -10'd1 * (i+1);
+				if ( i == 0 ) idx <= 20'd0;
+			end
+			// Otherwiser repeatedly write a large checkerboard to memory
+			else begin
+			
+				// STATE 0: Erase previous and reset count
+				if ( state[i] == 8'd0 ) begin
+					count[i] <= 20'd0;
+					
+					if ( idx == 20'd10 ) begin
+						state[i] <= 8'd1;
+					end
+					else if ( i == 0 ) begin
+						idx <= idx + 20'd1;
+						vga_reset <= 1'b_0 ;
+						write_enable <= 1'b_1 ;
+						write_address <= (19'd_640 * y_erase[idx]) + x_erase[idx] ;
+						write_data <= 8'b_000_000_00 ; // black
+						state[i] <= 8'd0;
+					end
+					else begin
+						state[i] <= 8'd0;
+					end
+				end
+				
+				// STATE 1: Draw new pixel
+				else if ( state[i] == 8'd1 ) begin
+					if ( idx == 20'd10 ) begin
+						x_erase[i] <= x_[i];
+						y_erase[i] <= y_[i];
+						x_[i] <= x_next[i];
+						y_[i] <= y_next[i];
+						vx[i] <= vx_next[i];
+						vy[i] <= vy_next[i];
+						state[i] <= 8'd2;
+					end
+					else if ( i == 0 ) begin
+						idx <= idx + 20'd1;
+						vga_reset <= 1'b_0 ;
+						write_enable <= 1'b_1 ;
+						write_address <= (19'd_640 * y_[idx]) + x_[idx] ;
+						write_data <= 8'b_111_111_11 ; // white
+						state[i] <= 8'd1;
+					end
+					else begin
+						state[i] <= 8'd1;
+					end
+				end
+				
+				// STATE 2: WAIT
+				else if ( state[i] == 8'd2 ) begin
+					if ( i == 0 ) write_enable <= 1'b_0 ;
+					
+					count[i] <= count[i] + 20'b1;
+					
+					if ( count[i] > 20'd1000000 )
+						state[i] <= 8'd0;
+					else
+						state[i] <= 8'd2;
+				end
+			
+			end
+			
+			
+			/*
+				if (arbiter_state == 8'd_0) begin
+					vga_reset <= 1'b_0 ;
+					write_enable <= 1'b_1 ;
+					write_address <= (19'd_640 * y_coord) + x_coord ;
+					if (x_coord < 10'd_320) begin
+						if (y_coord < 10'd_240) begin
+							write_data <= 8'b_111_000_00 ;
+						end
+						else begin
+							write_data <= 8'b_000_111_00 ;
+						end
+					end
+					else begin
+						if (y_coord < 10'd_240) begin
+							write_data <= 8'b_000_000_11 ;
+						end
+						else begin
+							write_data <= 8'b_111_111_00 ;
+						end
+					end
+					x_coord <= (x_coord==10'd_639)?10'd_0:(x_coord + 10'd_1) ;
+					y_coord <= (x_coord==10'd_639)?((y_coord==10'd_479)?10'd_0:(y_coord+10'd_1)):y_coord ;
+					arbiter_state <= 8'd_0 ;
+				end
+			end
+			*/
+		end
+	end
+endgenerate
+
+// Instantiate memory
+M10K_1000_8 pixel_data( .q(M10k_out), // contains pixel color (8 bit) for display
+								.d(write_data),
+								.write_address(write_address),
+								.read_address((19'd_640*next_y) + next_x),
+								.we(write_enable),
+								.clk(M10k_pll)
 );
 
-always @(posedge CLOCK_50) begin
+// Instantiate VGA driver					
+vga_driver DUT   (	.clock(vga_pll), 
+							.reset(vga_reset),
+							.color_in(M10k_out),	// Pixel color (8-bit) from memory
+							.next_x(next_x),		// This (and next_y) used to specify memory read address
+							.next_y(next_y),		// This (and next_x) used to specify memory read address
+							.hsync(VGA_HS),
+							.vsync(VGA_VS),
+							.red(VGA_R),
+							.green(VGA_G),
+							.blue(VGA_B),
+							.sync(VGA_SYNC_N),
+							.clk(VGA_CLK),
+							.blank(VGA_BLANK_N)
+);
 
-	// reset state machine and read/write controls
-	if (~KEY[0]) begin
-		state <= 0 ;
-		
-		// clear last write before reset
-		vga_sram_write <= 1'b1;
-		vga_sram_address <= vga_out_base_address + {22'b0, x_erase} + ({22'b0,y_erase}*640) ; 
-		vga_sram_writedata <= 8'b00000000; // black
-		
-		x_ <= 10'd100;
-		y_ <= 10'd100;
-		x_erase <= 10'd100;
-		y_erase <= 10'd100;
-		vx <= 10'd1;
-		vy <= 10'd1;
-	end
-
-	else begin
-
-		// STATE 0: INITIALIZE
-		if (state == 8'd0) begin
-			state <= 8'd1;
-			count <= 20'd0;
-			vga_sram_write <= 1'b1;
-			vga_sram_address <= vga_out_base_address + {22'b0, x_erase} + ({22'b0,y_erase}*640) ; 
-			vga_sram_writedata <= 8'b00000000; // black
-		end
-	
-		// STATE 1: DRAW
-		else if (state == 8'd1) begin
-			vga_sram_write <= 1'b1;
-			vga_sram_address <= vga_out_base_address + {22'b0, x_} + ({22'b0,y_}*640) ; 
-			vga_sram_writedata <= color_reg; // white
-			x_erase <= x_;
-			y_erase <= y_;
-			x_ <= x_next;
-			y_ <= y_next;
-			vx <= vx_next;
-			vy <= vy_next;
-			state <= 8'd2;
-		end
-		
-	
-		// STATE 2: WAIT 1000 CYCLES
-		else if (state == 8'd2) begin
-		
-			vga_sram_write <= 1'b0;
-			
-			count <= count + 20'b1;
-			
-			if ( count > 20'd1000000 )
-				state <= 8'd0;
-			else
-				state <= 8'd2;
-			
-		end
-	end
-end
-
-assign x_prev  = x_;
-assign y_prev  = y_;
-assign vx_prev = vx;
-assign vy_prev = vy;
 
 //=======================================================
 //  Structural coding
@@ -517,72 +581,16 @@ Computer_System The_System (
 	////////////////////////////////////
 	// FPGA Side
 	////////////////////////////////////
+	.vga_pio_locked_export			(vga_pll_lock),           //       vga_pio_locked.export
+	.vga_pio_outclk0_clk				(vga_pll),              //      vga_pio_outclk0.clk
+	.m10k_pll_locked_export			(M10k_pll_locked),          //      m10k_pll_locked.export
+	.m10k_pll_outclk0_clk			(M10k_pll),            //     m10k_pll_outclk0.clk
 
 	// Global signals
 	.system_pll_ref_clk_clk					(CLOCK_50),
 	.system_pll_ref_reset_reset			(1'b0),
 	
-	// SRAM shared block with HPS
-	.onchip_sram_s1_address               (sram_address),               
-	.onchip_sram_s1_clken                 (sram_clken),                 
-	.onchip_sram_s1_chipselect            (sram_chipselect),            
-	.onchip_sram_s1_write                 (sram_write),                 
-	.onchip_sram_s1_readdata              (sram_readdata),              
-	.onchip_sram_s1_writedata             (sram_writedata),             
-	.onchip_sram_s1_byteenable            (4'b1111), 
-	
-	//  sram to video
-	.onchip_vga_buffer_s1_address    (vga_sram_address),    
-	.onchip_vga_buffer_s1_clken      (vga_sram_clken),      
-	.onchip_vga_buffer_s1_chipselect (vga_sram_chipselect), 
-	.onchip_vga_buffer_s1_write      (vga_sram_write),      
-	.onchip_vga_buffer_s1_readdata   (),   // never read from vga here
-	.onchip_vga_buffer_s1_writedata  (vga_sram_writedata),   
-	
-	// HPS
-//	.mouse_x_pio_ext_export (c_r_init),
-//	.mouse_y_pio_ext_export (c_i_init),
-//	.incr_x_pio_ext_export  (incr_x),
-//	.incr_y_pio_ext_export  (incr_y), 
-//	.arm_reset_pio_ext_export (arm_reset),
-//	.max_iter_pio_ext_export  (max_iter),
-//	.pll_0_outclk0_clk (clk_100),
 
-
-	.x_pos_pio_ext_export(x_next),            //         
-	.y_pos_pio_ext_export(y_next),           //
-
-	// AV Config
-	.av_config_SCLK							(FPGA_I2C_SCLK),
-	.av_config_SDAT							(FPGA_I2C_SDAT),
-
-	// 50 MHz clock bridge
-	.clock_bridge_0_in_clk_clk            (CLOCK_50), //(CLOCK_50), 
-	
-	// VGA Subsystem
-	.vga_pll_ref_clk_clk 					(CLOCK2_50),
-	.vga_pll_ref_reset_reset				(1'b0),
-	.vga_CLK										(VGA_CLK),
-	.vga_BLANK									(VGA_BLANK_N),
-	.vga_SYNC									(VGA_SYNC_N),
-	.vga_HS										(VGA_HS),
-	.vga_VS										(VGA_VS),
-	.vga_R										(VGA_R),
-	.vga_G										(VGA_G),
-	.vga_B										(VGA_B),
-		
-	// SDRAM
-	.sdram_clk_clk								(DRAM_CLK),
-   .sdram_addr									(DRAM_ADDR),
-	.sdram_ba									(DRAM_BA),
-	.sdram_cas_n								(DRAM_CAS_N),
-	.sdram_cke									(DRAM_CKE),
-	.sdram_cs_n									(DRAM_CS_N),
-	.sdram_dq									(DRAM_DQ),
-	.sdram_dqm									({DRAM_UDQM,DRAM_LDQM}),
-	.sdram_ras_n								(DRAM_RAS_N),
-	.sdram_we_n									(DRAM_WE_N),
-	
 	////////////////////////////////////
 	// HPS Side
 	////////////////////////////////////
@@ -689,6 +697,195 @@ Computer_System The_System (
 );
 endmodule // end top level
 
+// Declaration of module, include width and signedness of each input/output
+module vga_driver (
+	input wire clock,
+	input wire reset,
+	input [7:0] color_in,
+	output [9:0] next_x,
+	output [9:0] next_y,
+	output wire hsync,
+	output wire vsync,
+	output [7:0] red,
+	output [7:0] green,
+	output [7:0] blue,
+	output sync,
+	output clk,
+	output blank
+);
+	
+	// Horizontal parameters (measured in clock cycles)
+	parameter [9:0] H_ACTIVE  	=  10'd_639 ;
+	parameter [9:0] H_FRONT 	=  10'd_15 ;
+	parameter [9:0] H_PULSE		=  10'd_95 ;
+	parameter [9:0] H_BACK 		=  10'd_47 ;
+
+	// Vertical parameters (measured in lines)
+	parameter [9:0] V_ACTIVE  	=  10'd_479 ;
+	parameter [9:0] V_FRONT 	=  10'd_9 ;
+	parameter [9:0] V_PULSE		=  10'd_1 ;
+	parameter [9:0] V_BACK 		=  10'd_32 ;
+
+//	// Horizontal parameters (measured in clock cycles)
+//	parameter [9:0] H_ACTIVE  	=  10'd_9 ;
+//	parameter [9:0] H_FRONT 	=  10'd_4 ;
+//	parameter [9:0] H_PULSE		=  10'd_4 ;
+//	parameter [9:0] H_BACK 		=  10'd_4 ;
+//	parameter [9:0] H_TOTAL 	=  10'd_799 ;
+//
+//	// Vertical parameters (measured in lines)
+//	parameter [9:0] V_ACTIVE  	=  10'd_1 ;
+//	parameter [9:0] V_FRONT 	=  10'd_1 ;
+//	parameter [9:0] V_PULSE		=  10'd_1 ;
+//	parameter [9:0] V_BACK 		=  10'd_1 ;
+
+	// Parameters for readability
+	parameter 	LOW 	= 1'b_0 ;
+	parameter 	HIGH	= 1'b_1 ;
+
+	// States (more readable)
+	parameter 	[7:0]	H_ACTIVE_STATE 		= 8'd_0 ;
+	parameter 	[7:0] 	H_FRONT_STATE		= 8'd_1 ;
+	parameter 	[7:0] 	H_PULSE_STATE 		= 8'd_2 ;
+	parameter 	[7:0] 	H_BACK_STATE 		= 8'd_3 ;
+
+	parameter 	[7:0]	V_ACTIVE_STATE 		= 8'd_0 ;
+	parameter 	[7:0] 	V_FRONT_STATE		= 8'd_1 ;
+	parameter 	[7:0] 	V_PULSE_STATE 		= 8'd_2 ;
+	parameter 	[7:0] 	V_BACK_STATE 		= 8'd_3 ;
+
+	// Clocked registers
+	reg 		hysnc_reg ;
+	reg 		vsync_reg ;
+	reg 	[7:0]	red_reg ;
+	reg 	[7:0]	green_reg ;
+	reg 	[7:0]	blue_reg ;
+	reg 		line_done ;
+
+	// Control registers
+	reg 	[9:0] 	h_counter ;
+	reg 	[9:0] 	v_counter ;
+
+	reg 	[7:0]	h_state ;
+	reg 	[7:0]	v_state ;
+
+	// State machine
+	always@(posedge clock) begin
+		// At reset . . .
+  		if (reset) begin
+			// Zero the counters
+			h_counter 	<= 10'd_0 ;
+			v_counter 	<= 10'd_0 ;
+			// States to ACTIVE
+			h_state 	<= H_ACTIVE_STATE  ;
+			v_state 	<= V_ACTIVE_STATE  ;
+			// Deassert line done
+			line_done 	<= LOW ;
+  		end
+  		else begin
+			//////////////////////////////////////////////////////////////////////////
+			///////////////////////// HORIZONTAL /////////////////////////////////////
+			//////////////////////////////////////////////////////////////////////////
+			if (h_state == H_ACTIVE_STATE) begin
+				// Iterate horizontal counter, zero at end of ACTIVE mode
+				h_counter <= (h_counter==H_ACTIVE)?10'd_0:(h_counter + 10'd_1) ;
+				// Set hsync
+				hysnc_reg <= HIGH ;
+				// Deassert line done
+				line_done <= LOW ;
+				// State transition
+				h_state <= (h_counter == H_ACTIVE)?H_FRONT_STATE:H_ACTIVE_STATE ;
+			end
+			// Assert done flag, wait here for reset
+			if (h_state == H_FRONT_STATE) begin
+				// Iterate horizontal counter, zero at end of H_FRONT mode
+				h_counter <= (h_counter==H_FRONT)?10'd_0:(h_counter + 10'd_1) ;
+				// Set hsync
+				hysnc_reg <= HIGH ;
+				// State transition
+				h_state <= (h_counter == H_FRONT)?H_PULSE_STATE:H_FRONT_STATE ;
+			end
+			if (h_state == H_PULSE_STATE) begin
+				// Iterate horizontal counter, zero at end of H_FRONT mode
+				h_counter <= (h_counter==H_PULSE)?10'd_0:(h_counter + 10'd_1) ;
+				// Set hsync
+				hysnc_reg <= LOW ;
+				// State transition
+				h_state <= (h_counter == H_PULSE)?H_BACK_STATE:H_PULSE_STATE ;
+			end
+			if (h_state == H_BACK_STATE) begin
+				// Iterate horizontal counter, zero at end of H_FRONT mode
+				h_counter <= (h_counter==H_BACK)?10'd_0:(h_counter + 10'd_1) ;
+				// Set hsync
+				hysnc_reg <= HIGH ;
+				// State transition
+				h_state <= (h_counter == H_BACK)?H_ACTIVE_STATE:H_BACK_STATE ;
+				// Signal line complete at state transition (offset by 1 for synchronous state transition)
+				line_done <= (h_counter == (H_BACK-1))?HIGH:LOW ;
+			end
+			//////////////////////////////////////////////////////////////////////////
+			///////////////////////// VERTICAL ///////////////////////////////////////
+			//////////////////////////////////////////////////////////////////////////
+			if (v_state == V_ACTIVE_STATE) begin
+				// increment vertical counter at end of line, zero on state transition
+				v_counter <= (line_done==HIGH)?((v_counter==V_ACTIVE)?10'd_0:(v_counter + 10'd_1)):v_counter ;
+				// set vsync in active mode
+				vsync_reg <= HIGH ;
+				// state transition - only on end of lines
+				v_state <= (line_done==HIGH)?((v_counter==V_ACTIVE)?V_FRONT_STATE:V_ACTIVE_STATE):V_ACTIVE_STATE ;
+			end
+			if (v_state == V_FRONT_STATE) begin
+				// increment vertical counter at end of line, zero on state transition
+				v_counter <= (line_done==HIGH)?((v_counter==V_FRONT)?10'd_0:(v_counter + 10'd_1)):v_counter ;
+				// set vsync in front porch
+				vsync_reg <= HIGH ;
+				// state transition
+				v_state <= (line_done==HIGH)?((v_counter==V_FRONT)?V_PULSE_STATE:V_FRONT_STATE):V_FRONT_STATE ;
+			end
+			if (v_state == V_PULSE_STATE) begin
+				// increment vertical counter at end of line, zero on state transition
+				v_counter <= (line_done==HIGH)?((v_counter==V_PULSE)?10'd_0:(v_counter + 10'd_1)):v_counter ;
+				// clear vsync in pulse
+				vsync_reg <= LOW ;
+				// state transition
+				v_state <= (line_done==HIGH)?((v_counter==V_PULSE)?V_BACK_STATE:V_PULSE_STATE):V_PULSE_STATE ;
+			end
+			if (v_state == V_BACK_STATE) begin
+				// increment vertical counter at end of line, zero on state transition
+				v_counter <= (line_done==HIGH)?((v_counter==V_BACK)?10'd_0:(v_counter + 10'd_1)):v_counter ;
+				// set vsync in back porch
+				vsync_reg <= HIGH ;
+				// state transition
+				v_state <= (line_done==HIGH)?((v_counter==V_BACK)?V_ACTIVE_STATE:V_BACK_STATE):V_BACK_STATE ;
+			end
+
+			//////////////////////////////////////////////////////////////////////////
+			//////////////////////////////// COLOR OUT ///////////////////////////////
+			//////////////////////////////////////////////////////////////////////////
+			red_reg 		<= (h_state==H_ACTIVE_STATE)?((v_state==V_ACTIVE_STATE)?{color_in[7:5],5'd_0}:8'd_0):8'd_0 ;
+			green_reg 	<= (h_state==H_ACTIVE_STATE)?((v_state==V_ACTIVE_STATE)?{color_in[4:2],5'd_0}:8'd_0):8'd_0 ;
+			blue_reg 	<= (h_state==H_ACTIVE_STATE)?((v_state==V_ACTIVE_STATE)?{color_in[1:0],6'd_0}:8'd_0):8'd_0 ;
+			
+ 	 	end
+	end
+	// Assign output values
+	assign hsync = hysnc_reg ;
+	assign vsync = vsync_reg ;
+	assign red = red_reg ;
+	assign green = green_reg ;
+	assign blue = blue_reg ;
+	assign clk = clock ;
+	assign sync = 1'b_0 ;
+	assign blank = hysnc_reg & vsync_reg ;
+	// The x/y coordinates that should be available on the NEXT cycle
+	assign next_x = (h_state==H_ACTIVE_STATE)?h_counter:10'd_0 ;
+	assign next_y = (v_state==V_ACTIVE_STATE)?v_counter:10'd_0 ;
+
+endmodule
+
+
+
+
 //============================================================
 // M10K module for testing
 //============================================================
@@ -696,15 +893,15 @@ endmodule // end top level
 // http://people.ece.cornell.edu/land/courses/ece5760/DE1_SOC/HDL_style_qts_qii51007.pdf
 //============================================================
 
-module M10K_256_32( 
-    output reg [31:0] q,
-    input [31:0] d,
-    input [7:0] write_address, read_address,
+module M10K_1000_8( 
+    output reg [7:0] q,
+    input [7:0] d,
+    input [18:0] write_address, read_address,
     input we, clk
 );
 	 // force M10K ram style
-	 // 256 words of 32 bits
-    reg [31:0] mem [255:0]  /* synthesis ramstyle = "no_rw_check, M10K" */;
+	 // 307200 words of 8 bits
+    reg [7:0] mem [307200:0]  /* synthesis ramstyle = "no_rw_check, M10K" */;
 	 
     always @ (posedge clk) begin
         if (we) begin
@@ -743,21 +940,3 @@ module particle (
 endmodule
 
 
-
-//////////////////////////////////////////////////
-//// signed mult of 4.23 format 2'comp ///////////
-//////////////////////////////////////////////////
-
-module signed_mult (out, a, b);
-	output 	signed  [26:0]	out;
-	input 	signed	[26:0] 	a;
-	input 	signed	[26:0] 	b;
-	// intermediate full bit length 8.46
-	wire 	signed	[53:0]	mult_out;
-	assign mult_out = a * b;
-	// select bits for 4.23 fixed point
-	assign out = { mult_out[53], mult_out[48:23] };
-
-endmodule
-
-/// end /////////////////////////////////////////////////////////////////////
