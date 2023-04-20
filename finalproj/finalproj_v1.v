@@ -418,6 +418,19 @@ reg [19:0] idx;
 
 assign box_size = 10'd200;
 
+// random number generator input
+ // Inputs
+ reg reset_rnd;
+ wire done_rnd;
+
+ // Outputs
+ wire [12:0] rnd;
+ 
+ reg first = 0; 
+
+ // Instantiate the Unit Under Test (UUT)
+ LFSR randNum ( .clock(M10k_pll), .reset(reset_rnd), .rnd(rnd), .done(done_rnd) );
+
 
 genvar i;
 generate
@@ -445,23 +458,56 @@ generate
 			if (~KEY[0]) begin
 				state[i] <= 8'd0 ;
 				if ( i == 0 ) vga_reset <= 1'b_1 ;
-				x_[i] <= 10'd_10 * i ;
-				y_[i] <= 10'd_2 * i ;
-				x_erase[i] <= 10'd0;
-				y_erase[i] <= 10'd0;
-				vx[i] <= -10'd1 * i;
+				if ( first == 0 ) begin
+					x_erase[i] <= 10'd0;
+					y_erase[i] <= 10'd0;
+					if ( i== 0 ) first = 1;
+				end
+				vx[i] <= -10'd1 * (i+2);
 				vy[i] <= -10'd1 * (i+1);
 				if ( i == 0 ) idx <= 20'd0;
 			end
-			// Otherwiser repeatedly write a large checkerboard to memory
+			
 			else begin
 			
-				// STATE 0: Erase previous and reset count
+				// STATE 0: start
 				if ( state[i] == 8'd0 ) begin
+					 if ( i == 0 ) reset_rnd <= 1'b0;
+                if ( done_rnd ) begin
+                    state[i] <= 9'd1;
+                end
+				end
+				
+				// STATE 1: set and reset
+				if ( state[i] == 9'd1 ) begin
+					if ( idx < 20'd10 ) begin
+						state[i] <= 9'd0;
+						if ( i == 0 ) idx <= idx + 20'd1;
+						if ( i == 0 ) reset_rnd <= 1'b1;
+						if ( i == idx ) x_[i] <= (rnd % (box_size - 10'd1)) + 10'd1;
+					end
+					else if ( idx < 20'd20 ) begin
+						state[i] <= 9'd0;
+						if ( i == 0 ) reset_rnd <= 1'b1;
+						if ( i == 0 ) idx <= idx + 20'd1;
+						if ( i == idx-20'd10 ) y_[i] <= (rnd % (box_size - 10'd1)) + 10'd1;
+					end
+					else if ( idx == 20'd20 ) begin
+						state[i] <= 9'd2;
+						if ( i == 0 ) begin
+							reset_rnd <= 1'b0;
+							idx <= 20'd0;
+						end
+					end
+				end
+			
+				// STATE 2: Erase previous and reset count
+				if ( state[i] == 8'd2 ) begin
 					count[i] <= 20'd0;
 					
 					if ( idx == 20'd10 ) begin
-						state[i] <= 8'd1;
+						state[i] <= 8'd3;
+						if ( i == 0 ) idx <= 0; 
 					end
 					else if ( i == 0 ) begin
 						idx <= idx + 20'd1;
@@ -469,15 +515,15 @@ generate
 						write_enable <= 1'b_1 ;
 						write_address <= (19'd_640 * y_erase[idx]) + x_erase[idx] ;
 						write_data <= 8'b_000_000_00 ; // black
-						state[i] <= 8'd0;
+						state[i] <= 8'd2;
 					end
 					else begin
-						state[i] <= 8'd0;
+						state[i] <= 8'd2;
 					end
 				end
 				
-				// STATE 1: Draw new pixel
-				else if ( state[i] == 8'd1 ) begin
+				// STATE 3: Draw new pixel
+				else if ( state[i] == 8'd3 ) begin
 					if ( idx == 20'd10 ) begin
 						x_erase[i] <= x_[i];
 						y_erase[i] <= y_[i];
@@ -485,63 +531,35 @@ generate
 						y_[i] <= y_next[i];
 						vx[i] <= vx_next[i];
 						vy[i] <= vy_next[i];
-						state[i] <= 8'd2;
+						state[i] <= 8'd4;
+						if ( i == 0 ) idx <= 0; 
 					end
 					else if ( i == 0 ) begin
 						idx <= idx + 20'd1;
 						vga_reset <= 1'b_0 ;
 						write_enable <= 1'b_1 ;
 						write_address <= (19'd_640 * y_[idx]) + x_[idx] ;
-						write_data <= 8'b_111_111_11 ; // white
-						state[i] <= 8'd1;
+						write_data <= 8'b_000_111_00 ; // green
+						state[i] <= 8'd3;
 					end
 					else begin
-						state[i] <= 8'd1;
+						state[i] <= 8'd3;
 					end
 				end
 				
 				// STATE 2: WAIT
-				else if ( state[i] == 8'd2 ) begin
+				else if ( state[i] == 8'd4 ) begin
 					if ( i == 0 ) write_enable <= 1'b_0 ;
 					
 					count[i] <= count[i] + 20'b1;
 					
-					if ( count[i] > 20'd1000000 )
-						state[i] <= 8'd0;
-					else
+					if ( count[i] > 20'd10000000 )
 						state[i] <= 8'd2;
+					else
+						state[i] <= 8'd4;
 				end
 			
 			end
-			
-			
-			/*
-				if (arbiter_state == 8'd_0) begin
-					vga_reset <= 1'b_0 ;
-					write_enable <= 1'b_1 ;
-					write_address <= (19'd_640 * y_coord) + x_coord ;
-					if (x_coord < 10'd_320) begin
-						if (y_coord < 10'd_240) begin
-							write_data <= 8'b_111_000_00 ;
-						end
-						else begin
-							write_data <= 8'b_000_111_00 ;
-						end
-					end
-					else begin
-						if (y_coord < 10'd_240) begin
-							write_data <= 8'b_000_000_11 ;
-						end
-						else begin
-							write_data <= 8'b_111_111_00 ;
-						end
-					end
-					x_coord <= (x_coord==10'd_639)?10'd_0:(x_coord + 10'd_1) ;
-					y_coord <= (x_coord==10'd_639)?((y_coord==10'd_479)?10'd_0:(y_coord+10'd_1)):y_coord ;
-					arbiter_state <= 8'd_0 ;
-				end
-			end
-			*/
 		end
 	end
 endgenerate
@@ -939,4 +957,48 @@ module particle (
     
 endmodule
 
+//////////////////////////////////////////////////
+//// random number generator ////////////////////
+//////////////////////////////////////////////////
+
+module LFSR (
+    input clock,
+    input reset,
+    output [12:0] rnd,
+	output done );
+
+	reg [12:0] random, random_next, random_done;
+	reg [3:0] count, count_next; //to keep track of the shifts
+
+    wire feedback = random[12] ^ random[3] ^ random[2] ^ random[0]; 
+
+	always @ (posedge clock or posedge reset) begin
+		if (reset) begin
+			random <= 13'hF; //An LFSR cannot have an all 0 state, thus reset to FF
+			count <= 0;
+		end
+	 
+		else begin
+			random <= random_next;
+			count <= count_next;
+		end
+	end
+
+	always @ (*) begin
+		random_next = random; //default state stays the same
+		count_next = count;
+	  
+		random_next = {random[11:0], feedback}; //shift left the xor'd every posedge clock
+		count_next = count + 1;
+
+		if (count == 13) begin
+			random_done = random; //assign the random number to output after 13 shifts
+		end
+	 
+	end
+
+	assign rnd = random_done;
+	assign done = ( count >= 4'd13 ) ? 1 : 0;
+
+endmodule
 
