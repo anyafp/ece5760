@@ -402,10 +402,11 @@ wire 		[9:0] 	next_y ;
 reg         [ 7:0] state [9:0];
 
 //=======================================================
-// 1 particle
+// 10 particle
 //=======================================================
 
 wire [9:0] box_size;
+wire [9:0] box_pio;
 reg [9:0] x_[9:0], y_[9:0];
 reg [9:0] x_erase[9:0];
 reg [9:0] y_erase[9:0];
@@ -413,10 +414,13 @@ reg signed [9:0] vx[9:0], vy[9:0];
 wire [9:0] x_next[9:0], x_prev[9:0], y_next[9:0], y_prev[9:0];
 wire signed [9:0] vx_next[9:0], vx_prev[9:0], vy_next[9:0], vy_prev[9:0];
 
-reg [19:0] count[9:0];
+reg [31:0] count[9:0];
+wire [31:0] delay_pio;
 reg [19:0] idx; 
+wire reset_pio;
+reg [9:0] box_counter;
 
-assign box_size = 10'd200;
+assign box_size = box_pio >> 1;
 
 // random number generator input
  // Inputs
@@ -455,7 +459,7 @@ generate
 
 		always@(posedge M10k_pll) begin
 			// Zero everything in reset
-			if (~KEY[0]) begin
+			if (~KEY[0] || ~reset_pio) begin
 				state[i] <= 8'd0 ;
 				if ( i == 0 ) vga_reset <= 1'b_1 ;
 				if ( first == 0 ) begin
@@ -463,9 +467,10 @@ generate
 					y_erase[i] <= 10'd0;
 					if ( i== 0 ) first = 1;
 				end
-				vx[i] <= -10'd1 * (i+2);
-				vy[i] <= -10'd1 * (i+1);
+				vx[i] <= ( i%2 ) ? -10'd1 : 10'd1;
+				vy[i] <= ( i%2 ) ? 10'd1 : -10'd1;
 				if ( i == 0 ) idx <= 20'd0;
+				if ( i == 0 ) box_counter = 0;
 			end
 			
 			else begin
@@ -479,18 +484,18 @@ generate
 				end
 				
 				// STATE 1: set and reset
-				if ( state[i] == 9'd1 ) begin
+				else if ( state[i] == 9'd1 ) begin
 					if ( idx < 20'd10 ) begin
 						state[i] <= 9'd0;
 						if ( i == 0 ) idx <= idx + 20'd1;
 						if ( i == 0 ) reset_rnd <= 1'b1;
-						if ( i == idx ) x_[i] <= (rnd % (box_size - 10'd1)) + 10'd1;
+						if ( i == idx ) x_[i] <= (10'd320 - box_size) + (rnd % (box_pio - 10'd1)) + 10'd1;
 					end
 					else if ( idx < 20'd20 ) begin
 						state[i] <= 9'd0;
 						if ( i == 0 ) reset_rnd <= 1'b1;
 						if ( i == 0 ) idx <= idx + 20'd1;
-						if ( i == idx-20'd10 ) y_[i] <= (rnd % (box_size - 10'd1)) + 10'd1;
+						if ( i == idx-20'd10 ) y_[i] <= (10'd240 - box_size) + (rnd % (box_pio - 10'd1)) + 10'd1;
 					end
 					else if ( idx == 20'd20 ) begin
 						state[i] <= 9'd2;
@@ -500,13 +505,88 @@ generate
 						end
 					end
 				end
+				
+				// STATE 2: Top Box
+				else if ( state[i] == 8'd2 ) begin
+					if ( box_counter == box_pio ) begin
+						state[i] <= 8'd3;
+						if ( i == 0 ) box_counter <= 0; 
+					end
+					else if ( i == 0 ) begin
+						box_counter <= box_counter + 20'd1;
+						vga_reset <= 1'b_0 ;
+						write_enable <= 1'b_1 ;
+						write_address <= (19'd_640 * (10'd240-box_size)) + (10'd320-box_size+box_counter) ;
+						write_data <= 8'b_111_111_11 ; // white
+						state[i] <= 8'd2;
+					end
+					else begin
+						state[i] <= 8'd2;
+					end
+				end
+				
+				// STATE 3: Bottom Box
+				else if ( state[i] == 8'd3 ) begin
+					if ( box_counter == box_pio ) begin
+						state[i] <= 8'd4;
+						if ( i == 0 ) box_counter <= 0; 
+					end
+					else if ( i == 0 ) begin
+						box_counter <= box_counter + 20'd1;
+						vga_reset <= 1'b_0 ;
+						write_enable <= 1'b_1 ;
+						write_address <= (19'd_640 * (10'd240+box_size)) + (10'd320-box_size+box_counter) ;
+						write_data <= 8'b_111_111_11 ; // white
+						state[i] <= 8'd3;
+					end
+					else begin
+						state[i] <= 8'd3;
+					end
+				end
+				
+				// STATE 4: Left Box
+				else if ( state[i] == 8'd4 ) begin
+					if ( box_counter == box_pio ) begin
+						state[i] <= 8'd5;
+						if ( i == 0 ) box_counter <= 0; 
+					end
+					else if ( i == 0 ) begin
+						box_counter <= box_counter + 20'd1;
+						vga_reset <= 1'b_0 ;
+						write_enable <= 1'b_1 ;
+						write_address <= (19'd_640 * (10'd240-box_size+box_counter)) + (10'd320-box_size) ;
+						write_data <= 8'b_111_111_11 ; // white
+						state[i] <= 8'd4;
+					end
+					else begin
+						state[i] <= 8'd4;
+					end
+				end
+				
+				// STATE 5: Right Box
+				else if ( state[i] == 8'd5 ) begin
+					if ( box_counter == box_pio ) begin
+						state[i] <= 8'd6;
+						if ( i == 0 ) box_counter <= 0; 
+					end
+					else if ( i == 0 ) begin
+						box_counter <= box_counter + 20'd1;
+						vga_reset <= 1'b_0 ;
+						write_enable <= 1'b_1 ;
+						write_address <= (19'd_640 * (10'd240-box_size+box_counter)) + (10'd320+box_size) ;
+						write_data <= 8'b_111_111_11 ; // white
+						state[i] <= 8'd5;
+					end
+					else begin
+						state[i] <= 8'd5;
+					end
+				end
 			
-				// STATE 2: Erase previous and reset count
-				if ( state[i] == 8'd2 ) begin
-					count[i] <= 20'd0;
+				// STATE 6: Erase previous (1) -- top left
+				else if ( state[i] == 8'd6 ) begin
 					
 					if ( idx == 20'd10 ) begin
-						state[i] <= 8'd3;
+						state[i] <= 8'd7;
 						if ( i == 0 ) idx <= 0; 
 					end
 					else if ( i == 0 ) begin
@@ -515,23 +595,78 @@ generate
 						write_enable <= 1'b_1 ;
 						write_address <= (19'd_640 * y_erase[idx]) + x_erase[idx] ;
 						write_data <= 8'b_000_000_00 ; // black
-						state[i] <= 8'd2;
+						state[i] <= 8'd6;
 					end
 					else begin
-						state[i] <= 8'd2;
+						state[i] <= 8'd6;
 					end
 				end
 				
-				// STATE 3: Draw new pixel
-				else if ( state[i] == 8'd3 ) begin
+				// STATE 7: Erase previous (2) -- bottom left
+				else if ( state[i] == 8'd7 ) begin
+					
 					if ( idx == 20'd10 ) begin
-						x_erase[i] <= x_[i];
-						y_erase[i] <= y_[i];
-						x_[i] <= x_next[i];
-						y_[i] <= y_next[i];
-						vx[i] <= vx_next[i];
-						vy[i] <= vy_next[i];
-						state[i] <= 8'd4;
+						state[i] <= 8'd8;
+						if ( i == 0 ) idx <= 0; 
+					end
+					else if ( i == 0 ) begin
+						idx <= idx + 20'd1;
+						vga_reset <= 1'b_0 ;
+						write_enable <= 1'b_1 ;
+						write_address <= ( 19'd_640 * (y_erase[idx]+10'b1) ) + x_erase[idx] ;
+						write_data <= 8'b_000_000_00 ; // black
+						state[i] <= 8'd7;
+					end
+					else begin
+						state[i] <= 8'd7;
+					end
+				end
+				
+				// STATE 8: Erase previous (3) -- bottom right
+				else if ( state[i] == 8'd8 ) begin
+					
+					if ( idx == 20'd10 ) begin
+						state[i] <= 8'd9;
+						if ( i == 0 ) idx <= 0; 
+					end
+					else if ( i == 0 ) begin
+						idx <= idx + 20'd1;
+						vga_reset <= 1'b_0 ;
+						write_enable <= 1'b_1 ;
+						write_address <= ( 19'd_640 * (y_erase[idx]+10'b1) ) + x_erase[idx]+10'b1 ;
+						write_data <= 8'b_000_000_00 ; // black
+						state[i] <= 8'd8;
+					end
+					else begin
+						state[i] <= 8'd8;
+					end
+				end
+				
+				// STATE 9: Erase previous (4) -- top right
+				else if ( state[i] == 8'd9 ) begin
+					
+					if ( idx == 20'd10 ) begin
+						state[i] <= 8'd10;
+						if ( i == 0 ) idx <= 0; 
+					end
+					else if ( i == 0 ) begin
+						idx <= idx + 20'd1;
+						vga_reset <= 1'b_0 ;
+						write_enable <= 1'b_1 ;
+						write_address <= ( 19'd_640 * y_erase[idx] ) + x_erase[idx]+10'b1 ;
+						write_data <= 8'b_000_000_00 ; // black
+						state[i] <= 8'd9;
+					end
+					else begin
+						state[i] <= 8'd9;
+					end
+				end
+				
+				// STATE 10: Draw new pixel (1) -- top left
+				else if ( state[i] == 8'd10 ) begin
+				
+					if ( idx == 20'd10 ) begin
+						state[i] <= 8'd11;
 						if ( i == 0 ) idx <= 0; 
 					end
 					else if ( i == 0 ) begin
@@ -539,24 +674,92 @@ generate
 						vga_reset <= 1'b_0 ;
 						write_enable <= 1'b_1 ;
 						write_address <= (19'd_640 * y_[idx]) + x_[idx] ;
-						write_data <= 8'b_000_111_00 ; // green
-						state[i] <= 8'd3;
+						write_data <= 8'b_111_111_11 ; // white
+						state[i] <= 8'd10;
 					end
 					else begin
-						state[i] <= 8'd3;
+						state[i] <= 8'd10;
 					end
 				end
 				
-				// STATE 2: WAIT
-				else if ( state[i] == 8'd4 ) begin
+				// STATE 11: Draw new pixel (2) -- bottom left
+				else if ( state[i] == 8'd11 ) begin
+				
+					if ( idx == 20'd10 ) begin
+						state[i] <= 8'd12;
+						if ( i == 0 ) idx <= 0; 
+					end
+					else if ( i == 0 ) begin
+						idx <= idx + 20'd1;
+						vga_reset <= 1'b_0 ;
+						write_enable <= 1'b_1 ;
+						write_address <= (19'd_640 * (y_[idx]+10'b1)) + x_[idx] ;
+						write_data <= 8'b_111_111_11 ; // white
+						state[i] <= 8'd11;
+					end
+					else begin
+						state[i] <= 8'd11;
+					end
+				end
+				
+				// STATE 12: Draw new pixel (3) -- bottom right
+				else if ( state[i] == 8'd12 ) begin
+				
+					if ( idx == 20'd10 ) begin
+						state[i] <= 8'd13;
+						if ( i == 0 ) idx <= 0; 
+					end
+					else if ( i == 0 ) begin
+						idx <= idx + 20'd1;
+						vga_reset <= 1'b_0 ;
+						write_enable <= 1'b_1 ;
+						write_address <= (19'd_640 * (y_[idx]+10'b1)) + x_[idx]+10'b1 ;
+						write_data <= 8'b_111_111_11 ; // white
+						state[i] <= 8'd12;
+					end
+					else begin
+						state[i] <= 8'd12;
+					end
+				end
+				
+				// STATE 13: Draw new pixel (4) -- top right
+				else if ( state[i] == 8'd13 ) begin
+				
+					count[i] <= 32'b0;
+				
+					if ( idx == 20'd10 ) begin
+						x_erase[i] <= x_[i];
+						y_erase[i] <= y_[i];
+						x_[i] <= x_next[i];
+						y_[i] <= y_next[i];
+						vx[i] <= vx_next[i];
+						vy[i] <= vy_next[i];
+						state[i] <= 8'd14;
+						if ( i == 0 ) idx <= 0; 
+					end
+					else if ( i == 0 ) begin
+						idx <= idx + 20'd1;
+						vga_reset <= 1'b_0 ;
+						write_enable <= 1'b_1 ;
+						write_address <= (19'd_640 * y_[idx]) + x_[idx]+10'b1 ;
+						write_data <= 8'b_111_111_11 ; // white
+						state[i] <= 8'd13;
+					end
+					else begin
+						state[i] <= 8'd13;
+					end
+				end
+				
+				// STATE 14: WAIT
+				else if ( state[i] == 8'd14 ) begin
 					if ( i == 0 ) write_enable <= 1'b_0 ;
 					
-					count[i] <= count[i] + 20'b1;
+					count[i] <= count[i] + 32'b1;
 					
-					if ( count[i] > 20'd10000000 )
-						state[i] <= 8'd2;
+					if ( count[i] > delay_pio )
+						state[i] <= 8'd6;
 					else
-						state[i] <= 8'd4;
+						state[i] <= 8'd14;
 				end
 			
 			end
@@ -607,6 +810,10 @@ Computer_System The_System (
 	// Global signals
 	.system_pll_ref_clk_clk					(CLOCK_50),
 	.system_pll_ref_reset_reset			(1'b0),
+	
+	.delay_pio_ext_export     (delay_pio),
+	.box_pio_ext_export     (box_pio),  
+	.reset_pio_ext_export     (reset_pio),
 	
 
 	////////////////////////////////////
@@ -944,16 +1151,16 @@ module particle (
     vx_next,
     vy_next );
 
-    input  [9:0] x_prev, y_prev, box_length;
+    input [9:0] x_prev, y_prev, box_length;
     input signed [9:0] vx_prev, vy_prev; 
     output [9:0] x_next, y_next;
     output signed [9:0] vx_next, vy_next;
 
-    assign vx_next = ( x_prev > box_length || x_prev + vx_prev <= 10'b0 ) ? -vx_prev : vx_prev;
-    assign vy_next = ( y_prev > box_length || y_prev + vy_prev <= 10'b0 ) ? -vy_prev : vy_prev;
+    assign vx_next = ( (x_prev >= (10'd320 + box_length)) || (x_prev <= (10'd320 - box_length)) ) ? -vx_prev : vx_prev;
+    assign vy_next = ( (y_prev >= (10'd240 + box_length)) || (y_prev <= (10'd240 - box_length)) ) ? -vy_prev : vy_prev;
 
-    assign x_next = x_prev + vx_next;
-    assign y_next = y_prev + vy_next;
+    assign x_next = (x_prev < (10'd320 - box_length)) ? (10'd320 - box_length) + vx_next : (x_prev > (10'd320 + box_length)) ? (10'd320 + box_length) + vx_next : x_prev + vx_next;
+    assign y_next = (y_prev < (10'd240 - box_length)) ? (10'd240 - box_length) + vy_next : (y_prev > (10'd240 + box_length)) ? (10'd240 + box_length) + vy_next : y_prev + vy_next;
     
 endmodule
 
