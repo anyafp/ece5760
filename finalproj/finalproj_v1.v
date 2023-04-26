@@ -419,6 +419,7 @@ wire [31:0] delay_pio;
 reg [19:0] idx; 
 wire reset_pio;
 reg [9:0] box_counter;
+reg [9:0] box_erase;
 
 assign box_size = box_pio >> 1;
 
@@ -465,7 +466,10 @@ generate
 				if ( first == 0 ) begin
 					x_erase[i] <= 10'd0;
 					y_erase[i] <= 10'd0;
-					if ( i== 0 ) first = 1;
+					if ( i== 0 ) begin 
+						box_erase <= box_size;
+						first = 1;
+					end
 				end
 				vx[i] <= ( i%2 ) ? -10'd1 : 10'd1;
 				vy[i] <= ( i%2 ) ? 10'd1 : -10'd1;
@@ -508,78 +512,146 @@ generate
 				
 				// STATE 2: Top Box
 				else if ( state[i] == 8'd2 ) begin
-					if ( box_counter == box_pio ) begin
-						state[i] <= 8'd3;
+					// erase previous box
+					if ( box_counter < ( box_erase << 1 ) ) begin
+						if ( i == 0 ) begin
+							box_counter <= box_counter + 20'd1;
+							vga_reset <= 1'b_0 ;
+							write_enable <= 1'b_1 ;
+							write_address <= (19'd_640 * (10'd240-box_erase)) + (10'd320-box_erase+box_counter) ;
+							write_data <= 8'b_000_000_00 ; // black
+							state[i] <= 8'd2;
+						end
+						else 
+							state[i] <= 8'd2;
+					end
+					// draw new box
+					else if ( box_counter < ( ( box_erase << 1 ) + box_pio )) begin
+						if ( i == 0 ) begin
+							box_counter <= box_counter + 20'd1;
+							vga_reset <= 1'b_0 ;
+							write_enable <= 1'b_1 ;
+							write_address <= (19'd_640 * (10'd240-box_size)) + (10'd320-box_size+(box_counter - ( box_erase << 1 ))) ;
+							write_data <= 8'b_111_111_11 ; // white
+							state[i] <= 8'd2;
+						end
+						else 
+							state[i] <= 8'd2;
+					end
+					else begin 
 						if ( i == 0 ) box_counter <= 0; 
+						state[i] <= 8'd3;
 					end
-					else if ( i == 0 ) begin
-						box_counter <= box_counter + 20'd1;
-						vga_reset <= 1'b_0 ;
-						write_enable <= 1'b_1 ;
-						write_address <= (19'd_640 * (10'd240-box_size)) + (10'd320-box_size+box_counter) ;
-						write_data <= 8'b_111_111_11 ; // white
-						state[i] <= 8'd2;
-					end
-					else begin
-						state[i] <= 8'd2;
-					end
+					
 				end
 				
 				// STATE 3: Bottom Box
 				else if ( state[i] == 8'd3 ) begin
-					if ( box_counter == box_pio ) begin
-						state[i] <= 8'd4;
+					
+					// erase previous box
+					if ( box_counter < ( box_erase << 1 ) ) begin
+						if ( i == 0 ) begin
+							box_counter <= box_counter + 20'd1;
+							vga_reset <= 1'b_0 ;
+							write_enable <= 1'b_1 ;
+							write_address <= (19'd_640 * (10'd240+box_erase)) + (10'd320-box_erase+box_counter) ;
+							write_data <= 8'b_000_000_00 ; // black
+							state[i] <= 8'd3;
+						end
+						else 
+							state[i] <= 8'd3;
+					end
+					// draw new box
+					else if ( box_counter < ( ( box_erase << 1 ) + box_pio )) begin
+						if ( i == 0 ) begin
+							box_counter <= box_counter + 20'd1;
+							vga_reset <= 1'b_0 ;
+							write_enable <= 1'b_1 ;
+							write_address <= (19'd_640 * (10'd240+box_size)) + (10'd320-box_size+(box_counter - ( box_erase << 1 )));
+							write_data <= 8'b_111_111_11 ; // white
+							state[i] <= 8'd3;
+						end
+						else 
+							state[i] <= 8'd3;
+					end
+					else begin 
 						if ( i == 0 ) box_counter <= 0; 
-					end
-					else if ( i == 0 ) begin
-						box_counter <= box_counter + 20'd1;
-						vga_reset <= 1'b_0 ;
-						write_enable <= 1'b_1 ;
-						write_address <= (19'd_640 * (10'd240+box_size)) + (10'd320-box_size+box_counter) ;
-						write_data <= 8'b_111_111_11 ; // white
-						state[i] <= 8'd3;
-					end
-					else begin
-						state[i] <= 8'd3;
+						state[i] <= 8'd4;
 					end
 				end
 				
 				// STATE 4: Left Box
 				else if ( state[i] == 8'd4 ) begin
-					if ( box_counter == box_pio ) begin
-						state[i] <= 8'd5;
+					
+					// erase previous box
+					if ( box_counter < ( box_erase << 1 ) ) begin
+						if ( i == 0 ) begin
+							box_counter <= box_counter + 20'd1;
+							vga_reset <= 1'b_0 ;
+							write_enable <= 1'b_1 ;
+							write_address <= (19'd_640 * (10'd240-box_erase + box_counter)) + (10'd320-box_erase) ;
+							write_data <= 8'b_000_000_00 ; // black
+							state[i] <= 8'd4;
+						end
+						else 
+							state[i] <= 8'd4;
+					end
+					// draw new box
+					else if ( box_counter < ( ( box_erase << 1 ) + box_pio )) begin
+						if ( i == 0 ) begin
+							box_counter <= box_counter + 20'd1;
+							vga_reset <= 1'b_0 ;
+							write_enable <= 1'b_1 ;
+							write_address <= (19'd_640 * (10'd240-box_size +(box_counter - ( box_erase << 1 )))) + (10'd320-box_size) ;
+							write_data <= 8'b_111_111_11; // white
+							state[i] <= 8'd4;
+						end
+						else 
+							state[i] <= 8'd4;
+					end
+					else begin 
 						if ( i == 0 ) box_counter <= 0; 
-					end
-					else if ( i == 0 ) begin
-						box_counter <= box_counter + 20'd1;
-						vga_reset <= 1'b_0 ;
-						write_enable <= 1'b_1 ;
-						write_address <= (19'd_640 * (10'd240-box_size+box_counter)) + (10'd320-box_size) ;
-						write_data <= 8'b_111_111_11 ; // white
-						state[i] <= 8'd4;
-					end
-					else begin
-						state[i] <= 8'd4;
+						state[i] <= 8'd5;
 					end
 				end
 				
 				// STATE 5: Right Box
 				else if ( state[i] == 8'd5 ) begin
-					if ( box_counter == box_pio ) begin
+					
+					// erase previous box
+					if ( box_counter < ( box_erase << 1 ) ) begin
+						if ( i == 0 ) begin
+							box_counter <= box_counter + 20'd1;
+							vga_reset <= 1'b_0 ;
+							write_enable <= 1'b_1 ;
+							write_address <= (19'd_640 * (10'd240-box_erase + box_counter)) + (10'd320+box_erase) ;
+							write_data <= 8'b_000_000_00 ; // black
+							state[i] <= 8'd5;
+						end
+						else 
+							state[i] <= 8'd5;
+					end
+					// draw new box
+					else if ( box_counter < ( ( box_erase << 1 ) + box_pio )) begin
+						if ( i == 0 ) begin
+							box_counter <= box_counter + 20'd1;
+							vga_reset <= 1'b_0 ;
+							write_enable <= 1'b_1 ;
+							write_address <= (19'd_640 * (10'd240-box_size +(box_counter - ( box_erase << 1 )))) + (10'd320+box_size) ;
+							write_data <= 8'b_111_111_11 ; // white
+							state[i] <= 8'd5;
+						end
+						else 
+							state[i] <= 8'd5;
+					end
+					else begin 
+						if ( i == 0 ) begin
+							box_counter <= 0; 
+							box_erase <= box_size;
+						end
 						state[i] <= 8'd6;
-						if ( i == 0 ) box_counter <= 0; 
 					end
-					else if ( i == 0 ) begin
-						box_counter <= box_counter + 20'd1;
-						vga_reset <= 1'b_0 ;
-						write_enable <= 1'b_1 ;
-						write_address <= (19'd_640 * (10'd240-box_size+box_counter)) + (10'd320+box_size) ;
-						write_data <= 8'b_111_111_11 ; // white
-						state[i] <= 8'd5;
-					end
-					else begin
-						state[i] <= 8'd5;
-					end
+					
 				end
 			
 				// STATE 6: Erase previous (1) -- top left
@@ -591,10 +663,16 @@ generate
 					end
 					else if ( i == 0 ) begin
 						idx <= idx + 20'd1;
-						vga_reset <= 1'b_0 ;
-						write_enable <= 1'b_1 ;
-						write_address <= (19'd_640 * y_erase[idx]) + x_erase[idx] ;
-						write_data <= 8'b_000_000_00 ; // black
+						if (( y_erase[idx] == (10'd240 + box_size) || y_erase[idx] == (10'd240 - box_size) ) && ( x_erase[idx] <= (10'd320 + box_size) || x_erase[idx] >= (10'd320 - box_size) ) )
+							state[i] <= 8'd6;
+						else if ( ( x_erase[idx] == (10'd320 + box_size) || x_erase[idx] == (10'd320 - box_size) ) && ( y_erase[idx] <= (10'd240 + box_size) || y_erase[idx] >= (10'd240 - box_size) ) )
+							state[i] <= 8'd6;
+						else begin
+							vga_reset <= 1'b_0 ;
+							write_enable <= 1'b_1 ;
+							write_address <= (19'd_640 * y_erase[idx]) + x_erase[idx] ;
+							write_data <= 8'b_000_000_00 ; // black
+						end
 						state[i] <= 8'd6;
 					end
 					else begin
@@ -611,10 +689,16 @@ generate
 					end
 					else if ( i == 0 ) begin
 						idx <= idx + 20'd1;
-						vga_reset <= 1'b_0 ;
-						write_enable <= 1'b_1 ;
-						write_address <= ( 19'd_640 * (y_erase[idx]+10'b1) ) + x_erase[idx] ;
-						write_data <= 8'b_000_000_00 ; // black
+						if (( (y_erase[idx] + 10'b1) == (10'd240 + box_size) || (y_erase[idx] + 10'b1) == (10'd240 - box_size) ) && ( x_erase[idx] <= (10'd320 + box_size) || x_erase[idx] >= (10'd320 - box_size) ) )
+							state[i] <= 8'd7;
+						else if ( ( x_erase[idx] == (10'd320 + box_size) || x_erase[idx] == (10'd320 - box_size) ) && ( (y_erase[idx] + 10'b1) <= (10'd240 + box_size) || (y_erase[idx] + 10'b1) >= (10'd240 - box_size) ) )
+							state[i] <= 8'd7;
+						else begin
+							vga_reset <= 1'b_0 ;
+							write_enable <= 1'b_1 ;
+							write_address <= ( 19'd_640 * (y_erase[idx]+10'b1) ) + x_erase[idx] ;
+							write_data <= 8'b_000_000_00 ; // black
+						end
 						state[i] <= 8'd7;
 					end
 					else begin
@@ -631,10 +715,16 @@ generate
 					end
 					else if ( i == 0 ) begin
 						idx <= idx + 20'd1;
-						vga_reset <= 1'b_0 ;
-						write_enable <= 1'b_1 ;
-						write_address <= ( 19'd_640 * (y_erase[idx]+10'b1) ) + x_erase[idx]+10'b1 ;
-						write_data <= 8'b_000_000_00 ; // black
+						if (( (y_erase[idx] + 10'b1) == (10'd240 + box_size) || (y_erase[idx] + 10'b1) == (10'd240 - box_size) ) && ( (x_erase[idx] + 10'b1) <= (10'd320 + box_size) || (x_erase[idx] + 10'b1) >= (10'd320 - box_size) ) )
+							state[i] <= 8'd8;
+						else if ( ( (x_erase[idx] + 10'b1) == (10'd320 + box_size) || (x_erase[idx] + 10'b1) == (10'd320 - box_size) ) && ( (y_erase[idx] + 10'b1) <= (10'd240 + box_size) || (y_erase[idx] + 10'b1) >= (10'd240 - box_size) ) )
+							state[i] <= 8'd8;
+						else begin
+							vga_reset <= 1'b_0 ;
+							write_enable <= 1'b_1 ;
+							write_address <= ( 19'd_640 * (y_erase[idx]+10'b1) ) + x_erase[idx]+10'b1 ;
+							write_data <= 8'b_000_000_00 ; // black
+						end
 						state[i] <= 8'd8;
 					end
 					else begin
@@ -651,10 +741,16 @@ generate
 					end
 					else if ( i == 0 ) begin
 						idx <= idx + 20'd1;
-						vga_reset <= 1'b_0 ;
-						write_enable <= 1'b_1 ;
-						write_address <= ( 19'd_640 * y_erase[idx] ) + x_erase[idx]+10'b1 ;
-						write_data <= 8'b_000_000_00 ; // black
+						if (( (y_erase[idx]) == (10'd240 + box_size) || (y_erase[idx]) == (10'd240 - box_size) ) && ( (x_erase[idx] + 10'b1) <= (10'd320 + box_size) || (x_erase[idx] + 10'b1) >= (10'd320 - box_size) ) )
+							state[i] <= 8'd9;
+						else if ( ( (x_erase[idx] + 10'b1) == (10'd320 + box_size) || (x_erase[idx] + 10'b1) == (10'd320 - box_size) ) && ( (y_erase[idx]) <= (10'd240 + box_size) || (y_erase[idx]) >= (10'd240 - box_size) ) )
+							state[i] <= 8'd9;
+						else begin
+							vga_reset <= 1'b_0 ;
+							write_enable <= 1'b_1 ;
+							write_address <= ( 19'd_640 * y_erase[idx] ) + x_erase[idx]+10'b1 ;
+							write_data <= 8'b_000_000_00 ; // black
+						end
 						state[i] <= 8'd9;
 					end
 					else begin
@@ -1156,11 +1252,11 @@ module particle (
     output [9:0] x_next, y_next;
     output signed [9:0] vx_next, vy_next;
 
-    assign vx_next = ( (x_prev >= (10'd320 + box_length)) || (x_prev <= (10'd320 - box_length)) ) ? -vx_prev : vx_prev;
-    assign vy_next = ( (y_prev >= (10'd240 + box_length)) || (y_prev <= (10'd240 - box_length)) ) ? -vy_prev : vy_prev;
+    assign vx_next = ( ((x_prev + 1) >= (10'd320 + box_length)) || (x_prev <= (10'd320 - box_length)) ) ? -vx_prev : vx_prev;
+    assign vy_next = ( ((y_prev + 1) >= (10'd240 + box_length)) || (y_prev <= (10'd240 - box_length)) ) ? -vy_prev : vy_prev;
 
-    assign x_next = (x_prev < (10'd320 - box_length)) ? (10'd320 - box_length) + vx_next : (x_prev > (10'd320 + box_length)) ? (10'd320 + box_length) + vx_next : x_prev + vx_next;
-    assign y_next = (y_prev < (10'd240 - box_length)) ? (10'd240 - box_length) + vy_next : (y_prev > (10'd240 + box_length)) ? (10'd240 + box_length) + vy_next : y_prev + vy_next;
+    assign x_next = (x_prev < (10'd320 - box_length)) ? (10'd320 - box_length) + vx_next : ((x_prev + 1) > (10'd320 + box_length)) ? (10'd320 + box_length) + vx_next : x_prev + vx_next;
+    assign y_next = (y_prev < (10'd240 - box_length)) ? (10'd240 - box_length) + vy_next : ((y_prev + 1) > (10'd240 + box_length)) ? (10'd240 + box_length) + vy_next : y_prev + vy_next;
     
 endmodule
 
