@@ -418,10 +418,13 @@ reg [31:0] count[9:0];
 wire [31:0] delay_pio;
 reg [19:0] idx; 
 wire reset_pio;
+reg reset_fpga;
 reg [9:0] box_counter;
 reg [9:0] box_erase;
 
 assign box_size = box_pio >> 1;
+
+reg [9:0] clear_counter_x, clear_counter_y;
 
 // random number generator input
  // Inputs
@@ -435,6 +438,13 @@ assign box_size = box_pio >> 1;
 
  // Instantiate the Unit Under Test (UUT)
  LFSR randNum ( .clock(M10k_pll), .reset(reset_rnd), .rnd(rnd), .done(done_rnd) );
+ 
+
+// ===============================================================================
+// STATE 0: Initalize particle x and y
+// STATE 1: Initalize particle x and y
+// STATE 2: Erase and Draw Top Part of Box
+// ===============================================================================
 
 
 genvar i;
@@ -460,9 +470,17 @@ generate
 
 		always@(posedge M10k_pll) begin
 			// Zero everything in reset
-			if (~KEY[0] || ~reset_pio) begin
+			if (~KEY[0] || ~reset_fpga) begin
 				state[i] <= 8'd0 ;
-				if ( i == 0 ) vga_reset <= 1'b_1 ;
+				if ( i == 0 ) begin
+					idx <= 20'd0;
+					box_counter <= 0;
+					clear_counter_x <= 0;
+					clear_counter_y <= 0;
+					reset_fpga <= 1;
+					vga_reset <= 1'b_1;
+					reset_rnd <= 1'b0;
+				end
 				if ( first == 0 ) begin
 					x_erase[i] <= 10'd0;
 					y_erase[i] <= 10'd0;
@@ -473,41 +491,64 @@ generate
 				end
 				vx[i] <= ( i%2 ) ? -10'd1 : 10'd1;
 				vy[i] <= ( i%2 ) ? 10'd1 : -10'd1;
-				if ( i == 0 ) idx <= 20'd0;
-				if ( i == 0 ) box_counter = 0;
 			end
 			
 			else begin
 			
 				// STATE 0: start
 				if ( state[i] == 8'd0 ) begin
-					 if ( i == 0 ) reset_rnd <= 1'b0;
+					 if ( i == 0 ) reset_rnd <= 1'b1;
                 if ( done_rnd ) begin
-                    state[i] <= 9'd1;
+                    state[i] <= 8'd1;
                 end
 				end
 				
 				// STATE 1: set and reset
-				else if ( state[i] == 9'd1 ) begin
+				else if ( state[i] == 8'd1 ) begin
 					if ( idx < 20'd10 ) begin
-						state[i] <= 9'd0;
-						if ( i == 0 ) idx <= idx + 20'd1;
-						if ( i == 0 ) reset_rnd <= 1'b1;
-						if ( i == idx ) x_[i] <= (10'd320 - box_size) + (rnd % (box_pio - 10'd1)) + 10'd1;
+						if ( done_rnd == 0 ) begin 
+							state[i] <= 8'd0;
+							if ( i == 0 ) idx <= idx + 20'd1;
+							if ( i == idx ) x_[i] <= (10'd320 - box_size) + (rnd % (box_pio - 10'd8)) + 10'd4;
+						end
 					end
 					else if ( idx < 20'd20 ) begin
-						state[i] <= 9'd0;
-						if ( i == 0 ) reset_rnd <= 1'b1;
-						if ( i == 0 ) idx <= idx + 20'd1;
-						if ( i == idx-20'd10 ) y_[i] <= (10'd240 - box_size) + (rnd % (box_pio - 10'd1)) + 10'd1;
+						if ( done_rnd == 0 ) begin 
+							state[i] <= 8'd0;
+							if ( i == 0 ) idx <= idx + 20'd1;
+							if ( i == idx-20'd10 ) y_[i] <= (10'd240 - box_size) + (rnd % (box_pio - 10'd8)) + 10'd4;
+						end
 					end
 					else if ( idx == 20'd20 ) begin
-						state[i] <= 9'd2;
+						state[i] <= 8'd15;
 						if ( i == 0 ) begin
 							reset_rnd <= 1'b0;
 							idx <= 20'd0;
 						end
 					end
+				end
+				
+				// STATE 15: Clear Screen
+				else if ( state[i] == 8'd15 ) begin
+				
+					if ( i == 0 ) begin
+						vga_reset <= 1'b_0 ;
+						write_enable <= 1'b_1 ;
+						write_address <= (19'd_640 * clear_counter_y) + (clear_counter_x) ;
+						write_data <= 8'b_000_000_00 ; // black
+					end
+					
+					if ( clear_counter_x == 10'd639 ) begin
+						if ( i == 0 ) clear_counter_x <= 0;
+						if ( i == 0 ) clear_counter_y <= clear_counter_y + 1;
+						if ( clear_counter_y == 10'd419 ) state[i] <= 8'd2;
+						else state[i] <= 8'd15;
+					end
+					else begin
+						if ( i == 0 ) clear_counter_x <= clear_counter_x + 1;
+						state[i] <= 8'd15;
+					end
+					
 				end
 				
 				// STATE 2: Top Box
@@ -848,7 +889,10 @@ generate
 				
 				// STATE 14: WAIT
 				else if ( state[i] == 8'd14 ) begin
-					if ( i == 0 ) write_enable <= 1'b_0 ;
+					if ( i == 0 ) begin
+						if ( !reset_pio ) reset_fpga <= 0;
+						write_enable <= 1'b_0 ;
+					end
 					
 					count[i] <= count[i] + 32'b1;
 					
@@ -856,6 +900,7 @@ generate
 						state[i] <= 8'd6;
 					else
 						state[i] <= 8'd14;
+
 				end
 			
 			end
@@ -1255,8 +1300,8 @@ module particle (
     assign vx_next = ( ((x_prev + 1) >= (10'd320 + box_length)) || (x_prev <= (10'd320 - box_length)) ) ? -vx_prev : vx_prev;
     assign vy_next = ( ((y_prev + 1) >= (10'd240 + box_length)) || (y_prev <= (10'd240 - box_length)) ) ? -vy_prev : vy_prev;
 
-    assign x_next = (x_prev < (10'd320 - box_length)) ? (10'd320 - box_length) + vx_next : ((x_prev + 1) > (10'd320 + box_length)) ? (10'd320 + box_length) + vx_next : x_prev + vx_next;
-    assign y_next = (y_prev < (10'd240 - box_length)) ? (10'd240 - box_length) + vy_next : ((y_prev + 1) > (10'd240 + box_length)) ? (10'd240 + box_length) + vy_next : y_prev + vy_next;
+    assign x_next = (x_prev <= (10'd320 - box_length)) ? (10'd320 - box_length + 1) + vx_next : ((x_prev + 1) >= (10'd320 + box_length)) ? (10'd320 + box_length - 1) + vx_next : x_prev + vx_next;
+    assign y_next = (y_prev <= (10'd240 - box_length)) ? (10'd240 - box_length + 1) + vy_next : ((y_prev + 1) >= (10'd240 + box_length)) ? (10'd240 + box_length - 1) + vy_next : y_prev + vy_next;
     
 endmodule
 
@@ -1275,8 +1320,8 @@ module LFSR (
 
     wire feedback = random[12] ^ random[3] ^ random[2] ^ random[0]; 
 
-	always @ (posedge clock or posedge reset) begin
-		if (reset) begin
+	always @ (posedge clock) begin
+		if (~reset) begin
 			random <= 13'hF; //An LFSR cannot have an all 0 state, thus reset to FF
 			count <= 0;
 		end
@@ -1295,6 +1340,7 @@ module LFSR (
 		count_next = count + 1;
 
 		if (count == 13) begin
+			count_next = 0;
 			random_done = random; //assign the random number to output after 13 shifts
 		end
 	 
@@ -1304,4 +1350,3 @@ module LFSR (
 	assign done = ( count >= 4'd13 ) ? 1 : 0;
 
 endmodule
-
