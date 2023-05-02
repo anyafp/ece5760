@@ -397,7 +397,7 @@ wire 		[9:0] 	next_y ;
 
 //=======================================================
 
-reg         [ 7:0] state [199:0];
+reg         [ 7:0] state [99:0];
 
 //=======================================================
 // 10 particle
@@ -405,12 +405,12 @@ reg         [ 7:0] state [199:0];
 
 wire [9:0] box_size;
 wire [9:0] box_pio;
-reg [9:0] x_[199:0], y_[199:0];
-reg signed [9:0] vx[199:0], vy[199:0];
-wire [9:0] x_next[199:0], x_prev[199:0], y_next[199:0], y_prev[199:0];
-wire signed [9:0] vx_next[199:0], vx_prev[199:0], vy_next[199:0], vy_prev[199:0];
+reg [9:0] x_[99:0], y_[99:0];
+reg signed [9:0] vx[99:0], vy[99:0];
+wire [9:0] x_next[99:0], x_prev[99:0], y_next[99:0], y_prev[99:0];
+wire signed [9:0] vx_next[99:0], vx_prev[99:0], vy_next[99:0], vy_prev[99:0];
 
-reg [31:0] count[199:0];
+reg [31:0] count[99:0];
 wire [31:0] delay_pio;
 reg [19:0] idx, cmp_idx; 
 wire reset_pio;
@@ -419,11 +419,11 @@ reg [9:0] box_counter;
 reg [9:0] box_erase;
 wire [19:0] num_particles;
 
-assign num_particles = 10'd200;
+assign num_particles = 10'd100;
 assign box_size = box_pio >> 1;
 
 reg [9:0] clear_counter_x, clear_counter_y;
-wire [1:0] direction [199:0];
+wire [1:0] direction [99:0];
 
 // random number generator input
  // Inputs
@@ -462,7 +462,7 @@ wire [1:0] direction [199:0];
 
 genvar i;
 generate
-	for ( i = 0; i < 200; i = i + 1 ) begin: cols
+	for ( i = 0; i < 100; i = i + 1 ) begin: cols
 		
 		particle particle1 (
 			  .x_prev(x_prev[i]),
