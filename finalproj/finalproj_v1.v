@@ -1,5 +1,3 @@
-
-
 module DE1_SoC_Computer (
 	////////////////////////////////////
 	// FPGA Pins
