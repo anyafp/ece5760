@@ -397,7 +397,7 @@ wire 		[9:0] 	next_y ;
 
 //=======================================================
 
-reg         [ 7:0] state [99:0];
+reg         [ 7:0] state [149:0];
 
 //=======================================================
 // 10 particle
@@ -405,12 +405,12 @@ reg         [ 7:0] state [99:0];
 
 wire [9:0] box_size;
 wire [9:0] box_pio;
-reg [9:0] x_[99:0], y_[99:0];
-reg signed [9:0] vx[99:0], vy[99:0];
-wire [9:0] x_next[99:0], x_prev[99:0], y_next[99:0], y_prev[99:0];
-wire signed [9:0] vx_next[99:0], vx_prev[99:0], vy_next[99:0], vy_prev[99:0];
+reg [9:0] x_[149:0], y_[149:0];
+reg signed [9:0] vx[149:0], vy[149:0];
+wire [9:0] x_next[149:0], x_prev[149:0], y_next[149:0], y_prev[149:0];
+wire signed [9:0] vx_next[149:0], vx_prev[149:0], vy_next[149:0], vy_prev[149:0];
 
-reg [31:0] count[99:0];
+reg [31:0] count[149:0];
 wire [31:0] delay_pio;
 reg [19:0] idx, cmp_idx; 
 wire reset_pio;
@@ -418,12 +418,15 @@ reg reset_fpga;
 reg [9:0] box_counter;
 reg [9:0] box_erase;
 wire [19:0] num_particles;
+wire [9:0] mask_val;
 
-assign num_particles = 10'd100;
+assign num_particles = 10'd150;
 assign box_size = box_pio >> 1;
+assign mask_val = (box_pio < 10'd70) ? 10'b0000011111 : (box_pio < 10'd135) ? 10'b0000111111 : (box_pio < 10'd265) ? 10'b0001111111 : 10'b0011111111;
+
 
 reg [9:0] clear_counter_x, clear_counter_y;
-wire [1:0] direction [99:0];
+wire [1:0] direction [149:0];
 
 // random number generator input
  // Inputs
@@ -432,8 +435,6 @@ wire [1:0] direction [99:0];
 
  // Outputs
  wire [12:0] rnd;
- 
- reg first = 0; 
 
  // Instantiate the Unit Under Test (UUT)
  LFSR randNum ( .clock(M10k_pll), .reset(reset_rnd), .rnd(rnd), .done(done_rnd) );
@@ -462,7 +463,7 @@ wire [1:0] direction [99:0];
 
 genvar i;
 generate
-	for ( i = 0; i < 100; i = i + 1 ) begin: cols
+	for ( i = 0; i < 150; i = i + 1 ) begin: cols
 		
 		particle particle1 (
 			  .x_prev(x_prev[i]),
@@ -496,12 +497,6 @@ generate
 					vga_reset <= 1'b_1;
 					reset_rnd <= 1'b0;
 				end
-				if ( first == 0 ) begin
-					if ( i== 0 ) begin 
-						box_erase <= box_size;
-						first = 1;
-					end
-				end
 			end
 			
 			else begin
@@ -520,14 +515,14 @@ generate
 						if ( done_rnd == 0 ) begin 
 							state[i] <= 8'd0;
 							if ( i == 0 ) idx <= idx + 20'd1;
-							if ( i == idx ) x_[i] <= (10'd320 - box_size) + (rnd % (box_pio - 10'd16)) + 10'd8;
+							if ( i == idx ) x_[i] <= (rnd & mask_val) + (10'd320 - box_size);
 						end
 					end
 					else if ( idx < ( num_particles << 1 ) ) begin
 						if ( done_rnd == 0 ) begin 
 							state[i] <= 8'd0;
 							if ( i == 0 ) idx <= idx + 20'd1;
-							if ( i == idx-num_particles ) y_[i] <= (10'd240 - box_size) + (rnd % (box_pio - 10'd16)) + 10'd8;
+							if ( i == idx-num_particles ) y_[i] <= (rnd & mask_val) + (10'd240 - box_size);
 						end
 					end
 					else if ( idx < ( ( num_particles << 1 ) + num_particles ) ) begin
@@ -536,17 +531,17 @@ generate
 							if ( i == 0 ) idx <= idx + 20'd1;
 							
 							// left
-							if ( ( rnd % 4 ) == 0 ) begin
+							if ( ( rnd & 2'b11 ) == 0 ) begin
 								if ( i == idx-(num_particles<<1) ) vx[i] <= -10'd1;
 								if ( i == idx-(num_particles<<1) ) vy[i] <= 10'd0;
 							end
 							// up
-							else if ( ( rnd % 4 ) == 1 ) begin
+							else if ( ( rnd & 2'b11 ) == 2'd1 ) begin
 								if ( i == idx-(num_particles<<1) ) vx[i] <= 10'd0;
 								if ( i == idx-(num_particles<<1) ) vy[i] <= 10'd1;
 							end
 							// right
-							else if ( ( rnd % 4 ) == 2 ) begin
+							else if ( ( rnd & 2'b11 ) == 2'd2 ) begin
 								if ( i == idx-(num_particles<<1) ) vx[i] <= 10'd1;
 								if ( i == idx-(num_particles<<1) ) vy[i] <= 10'd0;
 							end
