@@ -355,113 +355,81 @@ output					HPS_USB_STP;
 //  REG/WIRE declarations
 //=======================================================
 
-wire			[15: 0]	hex3_hex0;
-//wire			[15: 0]	hex5_hex4;
-
-//assign HEX0 = ~hex3_hex0[ 6: 0]; // hex3_hex0[ 6: 0]; 
-//assign HEX1 = ~hex3_hex0[14: 8];
-//assign HEX2 = ~hex3_hex0[22:16];
-//assign HEX3 = ~hex3_hex0[30:24];
-assign HEX4 = 7'b1111111;
-assign HEX5 = 7'b1111111;
-
-HexDigit Digit0(HEX0, hex3_hex0[3:0]);
-HexDigit Digit1(HEX1, hex3_hex0[7:4]);
-HexDigit Digit2(HEX2, hex3_hex0[11:8]);
-HexDigit Digit3(HEX3, hex3_hex0[15:12]);
-
 // VGA clock and reset lines
-wire vga_pll_lock ;
-wire vga_pll ;
-reg  vga_reset ;
+wire vga_pll_lock;
+wire vga_pll;
+reg  vga_reset;
 
 // M10k memory control and data
-wire 		[7:0] 	M10k_out ;
-reg 		[7:0] 	write_data ;
-reg 		[18:0] 	write_address ;
-reg 		[18:0] 	read_address ;
-reg 					write_enable ;
+wire [ 7:0] M10k_out;
+reg  [ 7:0] write_data;
+reg  [18:0] write_address;
+reg  [18:0] read_address;
+reg 			write_enable;
 
 // M10k memory clock
-wire 					M10k_pll ;
-wire 					M10k_pll_locked ;
-
-// Memory writing control registers
-reg 		[7:0] 	arbiter_state ;
-reg 		[9:0] 	x_coord ;
-reg 		[9:0] 	y_coord ;
+wire M10k_pll;
+wire M10k_pll_locked;
 
 // Wires for connecting VGA driver to memory
-wire 		[9:0]		next_x ;
-wire 		[9:0] 	next_y ;
+wire [9:0] next_x;
+wire [9:0] next_y;
 
-//=======================================================
+// ===============================================================================
 
-reg         [ 7:0] state;
+reg  [ 7:0] state;
 
-//=======================================================
-// 10 particle
-//=======================================================
-
-wire [9:0] box_size;
-wire [9:0] box_pio;
-reg [9:0] x_[14:0], y_[14:0];
-reg signed [9:0] vx[14:0], vy[14:0];
-wire [9:0] x_next_particle, y_next_particle, x_prev_particle,y_prev_particle;
-wire signed [9:0] vx_next_particle, vy_next_particle, vx_prev_particle, vy_prev_particle;
-reg [9:0] x_prev_curr, y_prev_curr; 
-reg signed [9:0] vx_prev_curr, vy_prev_curr; 
-reg signed [1:0] dir_x [14:0], dir_y[14:0];
-
-reg [31:0] count;
-wire [31:0] delay_pio;
-reg [19:0] idx, cmp_idx; 
-wire reset_pio;
-reg reset_fpga;
-reg [9:0] box_counter;
-reg [9:0] box_erase;
-wire [19:0] num_particles;
-wire [9:0] mask_val;
-wire [9:0] velocity_pio; 
-wire wall_hits_wire;
-reg [9:0] hits_reg, hits_temp; // counter for wall collisions
-reg [9:0] timestep_counter;
+// PIO Wires
+wire [ 9:0] box_pio;
+wire [31:0] delay_pio; 
+wire [ 9:0] velocity_pio;
 wire [19:0] nparticles_pio;
+wire 			reset_pio;
 
+// Position registers and wires
+reg  [9:0] x_[149:0], y_[149:0];		 // Registers that store all position values
+reg  [9:0] x_prev_curr, y_prev_curr; // Register for one position value
+wire [9:0] x_next_particle, y_next_particle, x_prev_particle,y_prev_particle; // Wires for module
+
+// Velocity registers and wires
+reg signed  [9:0] vx[149:0], vy[149:0];			 // Registers that store all velocity values
+reg signed  [9:0] vx_prev_curr, vy_prev_curr; // Register for one velocity value
+wire signed [9:0] vx_next_particle, vy_next_particle, vx_prev_particle, vy_prev_particle; // Wires for module
+
+// Counters, indices, etc
+reg [31:0] count; 		 // Counts cycles in wait state
+reg [19:0] idx, cmp_idx; // Index for position/velocty registers, compare index for collisions
+reg [ 9:0] box_counter;
+reg [ 9:0] timestep_counter;
+reg [ 9:0] clear_counter_x, clear_counter_y; // Counter for erasing box
+
+
+// Other variables
+wire [ 9:0] box_size;				// Current size of box
+reg  [ 9:0] box_erase;				// Old box measurements to erase
+wire [19:0] num_particles;			// Number of particles (assigned from PIO)
+wire [ 9:0] mask_val; 				// Mask to get proper range of positions to initialize
+reg  [ 9:0] hits_reg, hits_temp; // counter for wall collisions
+wire 			wall_hits_wire;		// Wall was hit this cycle
+reg 			reset_fpga;				// Only reset FPGA at the end of each timestep
+
+// Assignments
 assign num_particles = nparticles_pio;
-assign box_size = box_pio >> 1;
-assign mask_val = (box_pio < 10'd70) ? 10'b0000011111 : (box_pio < 10'd135) ? 10'b0000111111 : (box_pio < 10'd265) ? 10'b0001111111 : 10'b0011111111;
-assign hits_pio = hits_temp;
+assign box_size 		= box_pio >> 1;
+assign hits_pio 		= hits_temp;
+assign mask_val 		= (box_pio < 10'd70) ? 10'b0000011111 : (box_pio < 10'd135) ? 10'b0000111111 : (box_pio < 10'd265) ? 10'b0001111111 : 10'b0011111111;
 
-reg [9:0] clear_counter_x, clear_counter_y;
-wire [1:0] direction [14:0];
+// LFSR variables
+wire [12:0] rnd;		  // Random value
+reg 			reset_rnd; // Reset LFSR
+wire 			done_rnd;  // LFSR done signal
 
-// random number generator input
- // Inputs
- reg reset_rnd;
- wire done_rnd;
-
- // Outputs
- wire [12:0] rnd;
-
- // Instantiate the Unit Under Test (UUT)
- LFSR randNum ( .clock(M10k_pll), .reset(reset_rnd), .rnd(rnd), .done(done_rnd) );
- 
-
-// ===============================================================================
-// STATE 0:  Initalize particle x and y
-// STATE 1:  Initalize particle x and y
-// STATE 15: Clear screen
-// STATE 2:  Top Box
-// STATE 3:  Bottom Box
-// STATE 4:  Left Box
-// STATE 5:  Right Box
-// STATE 6:  Erase previous (1) -- top left
-// STATE 16: Check for collision & update vx/vy
-// STATE 10: Draw new pixel (1) -- top left
-// STATE 17: m 
-// STATE 14: WAIT
-// ===============================================================================
+LFSR randNum ( 
+	  .clock(M10k_pll), 
+	  .reset(reset_rnd), 
+	  .rnd(rnd), 
+	  .done(done_rnd)
+);
 
 particle particle1 (
 	  .x_prev(x_prev_particle),
@@ -476,10 +444,26 @@ particle particle1 (
 	  .wall_hit(wall_hits_wire)
 );
 
+// Assign input wires to particle module
 assign x_prev_particle = x_prev_curr; 
 assign y_prev_particle = y_prev_curr; 
 assign vx_prev_particle = vx_prev_curr;
 assign vy_prev_particle = vy_prev_curr;
+ 
+// ===============================================================================
+// STATE 0:  Initalize particle x and y
+// STATE 1:  Initalize particle x and y
+// STATE 15: Clear screen
+// STATE 2:  Top Box
+// STATE 3:  Bottom Box
+// STATE 4:  Left Box
+// STATE 5:  Right Box
+// STATE 6:  Erase previous (1) -- top left
+// STATE 16: Check for collision & update vx/vy
+// STATE 10: Draw new pixel (1) -- top left
+// STATE 17: m 
+// STATE 14: WAIT
+// ===============================================================================
 
 always@(posedge M10k_pll) begin
 	// Zero everything in reset
