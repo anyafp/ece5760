@@ -63,16 +63,24 @@ int fd;
 #define DELAY_PIO                 0x00
 #define BOX_PIO                   0x10
 #define RST_PIO                   0x20
-#define RHO_PIO                   0x30
-#define NROWS_PIO                 0x40
-#define RHO_0_PIO                 0x50
+#define VEL_PIO                   0x30
+#define HIT_PIO                   0x40
+#define NPARTICLES_PIO            0x50
+#define SW_P_PIO                  0x60
+#define SW_V_PIO                  0x70
+#define SW_N_PIO                  0x80
+#define SW_T_PIO                  0x90
 
 volatile unsigned int* delay_pio_ptr = NULL;
 volatile unsigned int* box_pio_ptr = NULL;
 volatile unsigned char* rst_pio_ptr = NULL;
-volatile unsigned int* rho_pio_ptr = NULL;
-volatile unsigned int* nrows_pio_ptr = NULL;
-volatile signed int* rho_0_pio_ptr = NULL;
+volatile unsigned int* vel_pio_ptr = NULL;
+volatile unsigned int* hit_pio_ptr = NULL;
+volatile unsigned int* nparticles_pio_ptr = NULL;
+volatile unsigned char* sw_p_pio = NULL;
+volatile unsigned char* sw_v_pio = NULL;
+volatile unsigned char* sw_n_pio = NULL;
+volatile unsigned char* sw_t_pio = NULL;
 
 int float2fix(float);
 int float2fix(float a) { return (int)(a*262144); }
@@ -81,10 +89,14 @@ float fix2float(int);
 float fix2float(int a) { return ((float)a) / 262144; }
 
 int temp_delay = 10000000;
-int temp_box = 200;
-float temp_ampl = 0.4;
-float temp_rho_0 = 0.25;
+int temp_box = 100;
+int temp_vel = 2; 
+int temp_nparticles = 100;
 int choose_int = 0;   // which setting to change
+int choose_param = 0; // which gas paramter to change
+int temp_press;
+int temp_temp; 
+
 
 int max(int a, int b);
 int max(int a, int b) {
@@ -102,27 +114,538 @@ void * scan_thread() {
   while (1) {
   
     // Which category to change?
-    printf("0: delay, 1: box size -- ");
+    printf("0: Print Params, 1: Change Params -- ");
     scanf("%i", &choose_int);
 
     switch ( choose_int ) {
     
-      case 0: // x, y, z, init values
-        printf("Delay in cycles: ");
+      case 0: // print params
+        printf("\nPressure (# wall collisions): %d\n", *(hit_pio_ptr));
+        printf("Volume (Box Size): %d\n", temp_box);
+        printf("# of Particles: %d\n", temp_nparticles);
+        printf("Temp (particle speed in pixels): %d\n\n", temp_vel);
+        break;
+      
+      case 1: // Set params
+        
+        // p & v
+        if ( *(sw_p_pio) && *(sw_v_pio) ) {
+        
+          printf("Change Param -- 0: Pressure, 1: Volume -- ");
+          scanf("%i", &choose_param);
+          
+          // presure change, volume adjust
+          if ( choose_param == 0 ) {
+            printf("Input Pressure: ");
+            scanf("%i", &temp_press);
+            
+            printf("\nUpdating pressure....\n\n");
+            while ( temp_press == *(hit_pio_ptr) );
+            printf("Adjusting volume....\n\n");
+            
+            while ( abs( temp_press - *(hit_pio_ptr) ) > 10 && temp_box < 350 && temp_box > 40 ) {
+                  
+              // pressure is too high
+              if ( ( ( *(hit_pio_ptr) - temp_press ) < 10 ) && temp_box < 350 )
+                temp_box += 10;
+              else if ( temp_box > 40 )
+                temp_temp -= 10;
+                
+              *(box_pio_ptr) = temp_box;
+              *(rst_pio_ptr) = 0;
+              usleep( 1 );
+            	*(rst_pio_ptr) = 1; 
+             
+              usleep(5000000); // wait for constant collisions
+            }
+            
+          // volume change, pressure adjust
+          } else {
+            printf("Input Volume: ");
+            scanf("%i", &temp_box);
+            temp_press = *(hit_pio_ptr);
+            *(box_pio_ptr) = temp_box;
+            *(rst_pio_ptr) = 0;
+            usleep( 1 );
+          	*(rst_pio_ptr) = 1; 
+            printf("\nUpdating pressure....\n\n");
+            while ( temp_press == *(hit_pio_ptr) );
+            printf("New Pressure = %d\n\n", *(hit_pio_ptr));
+          }
+        
+        // p & n
+        } else if ( *(sw_p_pio) && *(sw_n_pio) ) {
+        
+          printf("Change Param -- 0: Pressure, 1: # Particles -- ");
+          scanf("%i", &choose_param);
+          
+          // presure change, particles adjust
+          if ( choose_param == 0 ) {
+            printf("Input Pressure: ");
+            scanf("%i", &temp_press);
+            
+            while ( abs( temp_press - *(hit_pio_ptr) ) > 10 && temp_nparticles < 240 && temp_nparticles > 10 ) {
+                  
+              // pressure is too high
+              if ( ( ( *(hit_pio_ptr) - temp_press ) < 10 ) && temp_nparticles > 10 )
+                temp_nparticles -= 10;
+              else if ( temp_nparticles < 240 )
+                temp_nparticles += 10;
+                
+              *(nparticles_pio_ptr) = temp_nparticles;
+              *(rst_pio_ptr) = 0;
+              usleep( 1 );
+            	*(rst_pio_ptr) = 1; 
+             
+              usleep(5000000); // wait for constant collisions
+            }
+            
+          // particles change, pressure adjust
+          } else {
+            printf("Input # of Particles: ");
+            scanf("%i", &temp_nparticles);
+            temp_press = *(hit_pio_ptr); 
+            *(nparticles_pio_ptr) = temp_nparticles;
+            *(rst_pio_ptr) = 0;
+            usleep( 1 );
+          	*(rst_pio_ptr) = 1;
+            printf("\nUpdating pressure....\n\n");
+            while ( temp_press == *(hit_pio_ptr) );
+            printf("New Pressure = %d\n\n", *(hit_pio_ptr));
+          }
+        
+        // p & t
+        } else if ( *(sw_p_pio) && *(sw_t_pio) ) {
+        
+          printf("Change Param -- 0: Pressure, 1: Temp -- ");
+          scanf("%i", &choose_param);
+          
+          // presure change, temp adjust
+          if ( choose_param == 0 ) {
+            printf("Input Pressure: ");
+            scanf("%i", &temp_press);
+            
+            while ( abs( temp_press - *(hit_pio_ptr) ) > 10 && temp_vel < 10 && temp_vel > 1 ) {
+                  
+              // pressure is too high
+              if ( ( ( *(hit_pio_ptr) - temp_press ) < 10 ) && temp_vel > 1 )
+                temp_vel -= 1;
+              else if ( temp_vel < 10 )
+                temp_vel += 1;
+                
+              *(vel_pio_ptr) = temp_vel;
+              *(rst_pio_ptr) = 0;
+              usleep( 1 );
+            	*(rst_pio_ptr) = 1; 
+             
+              usleep(5000000); // wait for constant collisions
+            }
+          // temp change, pressure adjust
+          } else {
+            printf("Input Temp: ");
+            scanf("%i", &temp_vel);
+            temp_press = *(hit_pio_ptr);
+            *(vel_pio_ptr) = temp_vel; 
+            printf("\nUpdating pressure....\n\n");
+            while ( temp_press == *(hit_pio_ptr) );
+            printf("New Pressure = %d\n\n", *(hit_pio_ptr));
+          }
+        
+        // v & n
+        } else if ( *(sw_v_pio) && *(sw_n_pio) ) {
+        
+          printf("Change Param -- 0: Volume, 1: # Particles -- ");
+          scanf("%i", &choose_param);
+          
+          // volume change, particles adjust
+          if ( choose_param == 0 ) {
+            printf("Input Volume: ");
+            scanf("%i", &temp_box);
+            temp_press = *(hit_pio_ptr);
+            *(box_pio_ptr) = temp_box;
+            *(rst_pio_ptr) = 0;
+            usleep( 1 );
+          	*(rst_pio_ptr) = 1;
+           
+            printf("\nUpdating pressure....\n\n");
+            while ( temp_press == *(hit_pio_ptr) );
+            printf("Adjusting # particles....\n\n");
+           
+            while ( abs( temp_press - *(hit_pio_ptr) ) > 10 && temp_nparticles < 240 && temp_nparticles > 10 ) {
+                  
+              // pressure is too high
+              if ( ( ( temp_press - *(hit_pio_ptr) ) < 10 ) && temp_nparticles > 10 )
+                temp_nparticles -= 10;
+              else if ( temp_nparticles < 240 )
+                temp_nparticles += 10;
+                
+              *(nparticles_pio_ptr) = temp_nparticles;
+              *(rst_pio_ptr) = 0;
+              usleep( 1 );
+            	*(rst_pio_ptr) = 1; 
+             
+              usleep(5000000); // wait for constant collisions
+            }
+
+          // particles change, volum adjust
+          } else {
+            printf("Input # of Particles: ");
+            scanf("%i", &temp_nparticles);
+            *(nparticles_pio_ptr) = temp_nparticles;
+            temp_press = *(hit_pio_ptr);
+            *(rst_pio_ptr) = 0;
+            usleep( 1 );
+          	*(rst_pio_ptr) = 1; 
+           
+            printf("\nUpdating pressure....\n\n");
+            while ( temp_press == *(hit_pio_ptr) );
+            printf("Box value = %d\n", temp_box);
+            printf("Adjusting volume....\n\n");
+            printf("Pressure goal = %d\n\n", temp_press);
+            
+            
+            while ( (abs( temp_press - *(hit_pio_ptr) ) > 10 ) && temp_box < 350 && temp_box > 40 ) {
+                  
+              // pressure is too high
+              if ( ( ( *(hit_pio_ptr) - temp_press ) < 10 ) && temp_box < 350 ) {
+                temp_box += 10;
+                printf("hi1\n");
+              } else if ( temp_box > 40 ) {
+                temp_temp -= 10;
+                printf("hi2\n");
+              }
+                
+              *(box_pio_ptr) = temp_box;
+              *(rst_pio_ptr) = 0;
+              usleep( 1 );
+            	*(rst_pio_ptr) = 1; 
+             
+              printf("Box value = %d\n", temp_box);
+              int temp_val = *(hit_pio_ptr);
+              while ( *(hit_pio_ptr) == temp_val ); // wait for change in collisions
+              printf("Current pressure = %d\n", *(hit_pio_ptr));
+            }
+          }
+        
+        // v & t
+        } else if ( *(sw_v_pio) && *(sw_t_pio) ) {
+        
+          printf("Change Param -- 0: Volume, 1: Temp -- ");
+          scanf("%i", &choose_param);
+        
+          // volume change, temp adjust
+          if ( choose_param == 0 ) {
+            printf("Input Volume: ");
+            scanf("%i", &temp_box);
+            temp_press = *(hit_pio_ptr);
+            *(box_pio_ptr) = temp_box;
+            *(rst_pio_ptr) = 0;
+            usleep( 1 );
+          	*(rst_pio_ptr) = 1; 
+            printf("\nUpdating pressure....\n\n");
+            while ( temp_press == *(hit_pio_ptr) );
+            printf("Adjusting temperature....\n\n");
+           
+            while ( abs( temp_press - *(hit_pio_ptr) ) > 10 && temp_vel < 10 && temp_vel > 1 ) {
+                  
+              // pressure is too high
+              if ( ( ( *(hit_pio_ptr) - temp_press ) < 10 ) && temp_vel > 1 )
+                temp_vel -= 1;
+              else if ( temp_vel < 10 )
+                temp_vel += 1;
+                
+              *(vel_pio_ptr) = temp_vel;
+              *(rst_pio_ptr) = 0;
+              usleep( 1 );
+            	*(rst_pio_ptr) = 1; 
+             
+              usleep(5000000); // wait for constant collisions
+            }
+            
+          // temp change, volume adjust
+          } else {
+            printf("Input Temp: ");
+            scanf("%i", &temp_vel);
+            temp_press = *(hit_pio_ptr);
+            *(vel_pio_ptr) = temp_vel;
+            
+            printf("\nUpdating pressure....\n\n");
+            while ( temp_press == *(hit_pio_ptr) );
+            printf("Adjusting volume....\n\n");
+            
+            while ( abs( temp_press - *(hit_pio_ptr) ) > 10 && temp_box < 350 && temp_box > 40 ) {
+                  
+              // pressure is too high
+              if ( ( ( *(hit_pio_ptr) - temp_press ) < 10 ) && temp_box < 350 )
+                temp_box += 10;
+              else if ( temp_box > 40 )
+                temp_temp -= 10;
+                
+              *(box_pio_ptr) = temp_box;
+              *(rst_pio_ptr) = 0;
+              usleep( 1 );
+            	*(rst_pio_ptr) = 1; 
+             
+              usleep(5000000); // wait for constant collisions
+            }
+          }
+        
+        // n & t
+        } else if ( *(sw_n_pio) && *(sw_t_pio) ) {
+        
+          printf("Change Param -- 0: # Particles, 1: Temp -- ");
+          scanf("%i", &choose_param);
+        
+          // particles change, temp adjust
+          if ( choose_param == 0 ) {
+            printf("Input # of Particles: ");
+            scanf("%i", &temp_nparticles);
+            temp_press = *(hit_pio_ptr);
+            *(nparticles_pio_ptr) = temp_nparticles;
+            *(rst_pio_ptr) = 0;
+            usleep( 1 );
+          	*(rst_pio_ptr) = 1;  
+            
+            printf("\nUpdating pressure....\n\n");
+            while ( temp_press == *(hit_pio_ptr) );
+            printf("Adjusting temperature....\n\n");
+           
+            while ( abs( temp_press - *(hit_pio_ptr) ) > 10 && temp_vel < 10 && temp_vel > 1 ) {
+                  
+              // pressure is too high
+              if ( ( ( *(hit_pio_ptr) - temp_press ) < 10 ) && temp_vel > 1 )
+                temp_vel -= 1;
+              else if ( temp_vel < 10 )
+                temp_vel += 1;
+                
+              *(vel_pio_ptr) = temp_vel;
+              *(rst_pio_ptr) = 0;
+              usleep( 1 );
+            	*(rst_pio_ptr) = 1; 
+             
+              usleep(5000000); // wait for constant collisions
+            }
+          // temp change, particles adjust
+          } else {
+            printf("Input Temp: ");
+            scanf("%i", &temp_vel);
+            temp_press = *(hit_pio_ptr);
+            *(vel_pio_ptr) = temp_vel;
+            
+            printf("\nUpdating pressure....\n\n");
+            while ( temp_press == *(hit_pio_ptr) );
+            printf("Adjusting # particles....\n\n");
+            
+            while ( abs( temp_press - *(hit_pio_ptr) ) > 10 && temp_nparticles < 240 && temp_nparticles > 10 ) {
+                  
+              // pressure is too high
+              if ( ( ( *(hit_pio_ptr) - temp_press ) < 10 ) && temp_nparticles > 10 )
+                temp_nparticles -= 10;
+              else if ( temp_nparticles < 240 )
+                temp_nparticles += 10;
+                
+              *(nparticles_pio_ptr) = temp_nparticles;
+              *(rst_pio_ptr) = 0;
+              usleep( 1 );
+            	*(rst_pio_ptr) = 1; 
+              
+              int temp_val = *(hit_pio_ptr);
+              
+              while ( *(hit_pio_ptr) == temp_val ); // wait for change in collisions
+            }
+          }
+        }
+        break;
+      
+      case 2: // x, y, z, init values
+        printf("Wall hits: ");
+        printf("%i\n", *(hit_pio_ptr));
+        break;
+      
+      case 3: // x, y, z, init values
+        printf("Input delay: ");
         scanf("%i", &temp_delay);
         *(delay_pio_ptr) = temp_delay;
-       
-        break;
-        
-      case 1: // sigma, beta, rho parameters
-        printf("Box Size: ");
-        scanf("%d", &temp_box);
-        *(box_pio_ptr) = temp_box;
         *(rst_pio_ptr) = 0;
         usleep( 1 );
-      	*(rst_pio_ptr) = 1;
-              
+      	*(rst_pio_ptr) = 1; 
         break;
+      
+      case 4: // x, y, z, init values
+        printf("Input nparticles: ");
+        scanf("%i", &temp_nparticles);
+        *(nparticles_pio_ptr) = temp_nparticles;
+        *(rst_pio_ptr) = 0;
+        usleep( 1 );
+      	*(rst_pio_ptr) = 1; 
+        break;
+      
+      case 5: // x, y, z, init values
+        printf("Speed: ");
+        scanf("%i", &temp_vel);
+        *(vel_pio_ptr) = temp_vel;
+        break;
+        
+        /*
+        *(rst_pio_ptr) = 0;
+        usleep( 1 );
+      	*(rst_pio_ptr) = 1; 
+        
+      case 1: // change gas parameter
+        printf("Const Param -- 0: vol, 1: pressure, 2: temp -- ");
+        scanf("%d", &choose_param_const);
+        
+        switch (choose_param_const){
+        
+          case 0: // volume constant
+            printf("Change Param -- 0: pressure, 1: temp -- ");
+            scanf("%d", &choose_param_ch);
+          
+            switch (choose_param_ch) {
+            
+              case 0: // change pressure 
+                printf("Pressure: ");
+                scanf("%d", &temp_press);
+                while ( abs( temp_press - *(hit_pio_ptr) ) > 2  ) {
+                  
+                  // pressure is too high
+                  if ( ( temp_press - *(hit_pio_ptr) ) < 0 )
+                    temp_temp -= 1;
+                  else
+                    temp_temp += 1;
+                    
+                  *(vel_pio_ptr) = temp_temp;
+                  *(rst_pio_ptr) = 0;
+                  usleep( 1 );
+                	*(rst_pio_ptr) = 1; 
+                 
+                  usleep(5000000); // wait for constant collisions
+                }
+                break;
+              
+              case 1: // change temperature
+                printf("Temperature: ");
+                scanf("%d", &temp_temp);
+                *(vel_pio_ptr) = temp_temp;
+                break;
+            }
+            break;
+            
+          case 1: // pressure constant
+            printf("Change Param -- 0: vol, 1: temp -- ");
+            scanf("%d", &choose_param_ch);
+            temp_press = *(hit_pio_ptr);
+          
+            switch (choose_param_ch){
+            
+              case 0: // change volume, temp is adjusted
+                printf("Volume: ");
+                scanf("%d", &temp_box);
+                
+                // change pio box size
+                *(box_pio_ptr) = temp_box;
+                *(rst_pio_ptr) = 0;
+                usleep( 1 );
+              	*(rst_pio_ptr) = 1;  
+               
+                while ( abs( temp_press - *(hit_pio_ptr) ) > 2  ) {
+                  printf("temp_press = %d\n", temp_press);
+                  printf("hits pio = %d\n", *(hit_pio_ptr));
+                  
+                  // pressure is too high
+                  if ( ( temp_press - *(hit_pio_ptr) ) < 0 )
+                    temp_temp -= 1;
+                  else
+                    temp_temp += 1;
+                  
+                  *(vel_pio_ptr) = temp_temp;
+                  *(rst_pio_ptr) = 0;
+                  usleep( 1 );
+                	*(rst_pio_ptr) = 1; 
+                 
+                  usleep(5000000); // wait for constant collisions
+                }
+                
+                break;
+              
+              case 1: // change temperature, volume is adjusted
+                printf("Temperature: ");
+                scanf("%d", &temp_temp);
+                
+                // change temp (velocity)
+                *(vel_pio_ptr) = temp_vel;
+                *(rst_pio_ptr) = 0;
+                usleep( 1 );
+              	*(rst_pio_ptr) = 1;
+
+               // pressure is off
+               while ( abs( temp_press - *(hit_pio_ptr) ) > 2  ) {
+                  
+                  // pressure is too high
+                  if ( ( temp_press - *(hit_pio_ptr) ) < 0 )
+                    temp_box += 10;
+                  else
+                    temp_box -= 10;
+                  
+                  *(box_pio_ptr) = temp_box;
+                  *(rst_pio_ptr) = 0;
+                  usleep( 1 );
+                	*(rst_pio_ptr) = 1; 
+                 
+                  usleep(5000000); // wait for constant collisions
+                } 
+                break;
+            }
+            break;
+            
+          case 2: // temperature constant
+            printf("Change Param -- 0: vol, 1: pressure -- ");
+            scanf("%d", &choose_param_ch);
+          
+            switch (choose_param_ch){
+            
+              case 0: // change volume
+                printf("Volume: ");
+                scanf("%d", &temp_box);
+                *(box_pio_ptr) = temp_box;
+                *(box_pio_ptr) = temp_box;
+                *(rst_pio_ptr) = 0;
+                usleep( 1 );
+              	*(rst_pio_ptr) = 1;  
+                break;
+              
+              case 1: // change pressure, volume adjusted
+                printf("Pressure: ");
+                scanf("%d", &temp_press);
+               
+               // pressure is off
+               while ( abs( temp_press - *(hit_pio_ptr) ) > 2  ) {
+                  
+                  // pressure is too high
+                  if ( ( temp_press - *(hit_pio_ptr) ) < 0 )
+                    temp_box += 10;
+                  else
+                    temp_box -= 10;
+                  
+                  *(box_pio_ptr) = temp_box;
+                  *(rst_pio_ptr) = 0;
+                  usleep( 1 );
+                	*(rst_pio_ptr) = 1; 
+                 
+                  usleep(5000000); // wait for constant collisions
+                } 
+                break;
+            }
+            break;
+        }
+        break;
+        
+     case 2: // print pressure
+        printf("Pressure (ncycles) = %d\n", *(hit_pio_ptr));
+        printf("Temp (speed) = %d\n", *(vel_pio_ptr));
+        printf("Volume (box length) = %d\n", *(box_pio_ptr));
+        break;
+     */
     }
   }
 }
@@ -162,9 +685,13 @@ int main(void)
   delay_pio_ptr = (unsigned int *)(h2p_lw_virtual_base + DELAY_PIO);
   box_pio_ptr = (unsigned int *)(h2p_lw_virtual_base + BOX_PIO);
   rst_pio_ptr = (unsigned char *)(h2p_lw_virtual_base + RST_PIO);
-  rho_pio_ptr = (unsigned int *)(h2p_lw_virtual_base + RHO_PIO);
-  nrows_pio_ptr = (unsigned int *)(h2p_lw_virtual_base + NROWS_PIO);
-  rho_0_pio_ptr = (signed int *)(h2p_lw_virtual_base + RHO_0_PIO);
+  vel_pio_ptr = (unsigned int *)(h2p_lw_virtual_base + VEL_PIO);
+  hit_pio_ptr = (unsigned int *)(h2p_lw_virtual_base + HIT_PIO);
+  nparticles_pio_ptr = (unsigned int *)(h2p_lw_virtual_base + NPARTICLES_PIO);
+  sw_p_pio = (unsigned char *)(h2p_lw_virtual_base + SW_P_PIO);
+  sw_v_pio = (unsigned char *)(h2p_lw_virtual_base + SW_V_PIO);
+  sw_n_pio = (unsigned char *)(h2p_lw_virtual_base + SW_N_PIO);
+  sw_t_pio = (unsigned char *)(h2p_lw_virtual_base + SW_T_PIO);
  
 	// === get VGA char addr =====================
 	// get virtual addr that maps to physical
@@ -210,12 +737,16 @@ int main(void)
  
   *(delay_pio_ptr) = temp_delay;
   *(box_pio_ptr) = temp_box;
+  *(vel_pio_ptr) = temp_vel;
+  *(nparticles_pio_ptr) = temp_nparticles;
+  
   *(rst_pio_ptr) = 0;
   usleep( 1 );
 	*(rst_pio_ptr) = 1;
  
 //  while (1) {
-//    printf("Output Val = %f\n", fix2float(*(output_pio_ptr)) );
+//    printf("Hit Counter: %d\n", *(hit_pio_ptr));
+//    usleep(10000);
 //  }
  
   // thread identifiers
