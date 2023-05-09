@@ -384,7 +384,12 @@ wire [ 9:0] box_pio;
 wire [31:0] delay_pio; 
 wire [ 9:0] velocity_pio;
 wire [19:0] nparticles_pio;
+wire [ 9:0] hits_pio; 
 wire 			reset_pio;
+wire			sw_p;
+wire			sw_v;
+wire			sw_n;
+wire			sw_t;
 
 // Position registers and wires
 reg  [9:0] x_[149:0], y_[149:0];		 // Registers that store all position values
@@ -403,7 +408,6 @@ reg [ 9:0] box_counter;
 reg [ 9:0] timestep_counter;
 reg [ 9:0] clear_counter_x, clear_counter_y; // Counter for erasing box
 
-
 // Other variables
 wire [ 9:0] box_size;				// Current size of box
 reg  [ 9:0] box_erase;				// Old box measurements to erase
@@ -412,10 +416,17 @@ wire [ 9:0] mask_val; 				// Mask to get proper range of positions to initialize
 reg  [ 9:0] hits_reg, hits_temp; // counter for wall collisions
 wire 			wall_hits_wire;		// Wall was hit this cycle
 reg 			reset_fpga;				// Only reset FPGA at the end of each timestep
+wire [ 9:0] hit_in_wire, hit_out_wire;
+reg  [ 9:0] hit_counter;
 
 // Assignments
+assign sw_p				= SW[0];
+assign sw_v				= SW[1];
+assign sw_n				= SW[2];
+assign sw_t				= SW[3];
 assign num_particles = nparticles_pio;
 assign box_size 		= box_pio >> 1;
+//assign hits_pio 		= hits_temp;
 assign hits_pio 		= hits_temp;
 assign mask_val 		= (box_pio < 10'd70) ? 10'b0000011111 : (box_pio < 10'd135) ? 10'b0000111111 : (box_pio < 10'd265) ? 10'b0001111111 : 10'b0011111111;
 
@@ -441,14 +452,16 @@ particle particle1 (
 	  .y_next(y_next_particle),
 	  .vx_next(vx_next_particle),
 	  .vy_next(vy_next_particle),
-	  .wall_hit(wall_hits_wire)
+	  .hit_counter_in(hit_in_wire),
+	  .hit_counter_out(hit_out_wire)
 );
 
 // Assign input wires to particle module
-assign x_prev_particle = x_prev_curr; 
-assign y_prev_particle = y_prev_curr; 
+assign x_prev_particle  = x_prev_curr; 
+assign y_prev_particle  = y_prev_curr; 
 assign vx_prev_particle = vx_prev_curr;
 assign vy_prev_particle = vy_prev_curr;
+assign hit_in_wire      = hit_counter;
  
 // ===============================================================================
 // STATE 0:  Initalize particle x and y
@@ -461,7 +474,6 @@ assign vy_prev_particle = vy_prev_curr;
 // STATE 6:  Erase previous (1) -- top left
 // STATE 16: Check for collision & update vx/vy
 // STATE 10: Draw new pixel (1) -- top left
-// STATE 17: m 
 // STATE 14: WAIT
 // ===============================================================================
 
@@ -478,6 +490,8 @@ always@(posedge M10k_pll) begin
 		vga_reset <= 1'b_1;
 		reset_rnd <= 1'b0;
 		hits_reg <= 0;
+		timestep_counter <= 0;
+		hit_counter <= 0;
 	end
 
 	else begin
@@ -814,16 +828,13 @@ always@(posedge M10k_pll) begin
 		
 		// STATE 10: Draw new pixel (1) -- top left
 		else if ( state == 8'd10 ) begin
-		
-			
-			// increment counter for wall collisions
-			if (wall_hits_wire) hits_reg <= hits_reg + 1;
 			
 			// updating 
 			x_[idx] <= x_next_particle;
 			y_[idx] <= y_next_particle;
 			vx[idx] <= vx_next_particle;
 			vy[idx] <= vy_next_particle;
+			hit_counter <= hit_out_wire;
 			
 			if ( idx == num_particles ) begin
 				state <= 8'd14;
@@ -877,13 +888,14 @@ always@(posedge M10k_pll) begin
 				state <= 8'd6;
 				idx <= 0;
 				
-				if ( timestep_counter == 10'd10000 ) begin
+				if ( timestep_counter >= 10'd100 ) begin
 					timestep_counter <= 0;
-					hits_temp <= hits_reg;
-					hits_reg <= 0;
+					hits_temp <= hit_counter;
+					hit_counter <= 0;
 				end
-				else
+				else begin
 					timestep_counter <= timestep_counter + 1;
+				end
 			end
 			else
 				state <= 8'd14;
@@ -943,6 +955,10 @@ Computer_System The_System (
 	.velocity_pio_ext_export  (velocity_pio), 
 	.hits_pio_ext_export  (hits_pio), 
 	.nparticles_pio_ext_export  (nparticles_pio),
+	.sw_p_pio_ext_export  (sw_p),
+	.sw_v_pio_ext_export  (sw_v),
+	.sw_n_pio_ext_export  (sw_n),
+	.sw_t_pio_ext_export  (sw_t),
 	
 
 	////////////////////////////////////
@@ -1279,18 +1295,20 @@ module particle (
     y_next,
     vx_next,
     vy_next,
-	 wall_hit );
+	 hit_counter_in,
+	 hit_counter_out );
 
     input [9:0] x_prev, y_prev, box_length;
     input signed [9:0] vx_prev, vy_prev; 
+	 input [9:0] hit_counter_in;
     output [9:0] x_next, y_next;
     output signed [9:0] vx_next, vy_next;
-	 output wall_hit;
+	 output [9:0] hit_counter_out;
 
     assign vx_next = ( ((x_prev + vx_prev) >= (10'd320 + box_length)) || ((x_prev + vx_prev) <= (10'd320 - box_length)) ) ? -vx_prev : vx_prev;
     assign vy_next = ( ((y_prev + vy_prev) >= (10'd240 + box_length)) || ((y_prev + vy_prev) <= (10'd240 - box_length)) ) ? -vy_prev : vy_prev;
-	 //assign wall_hit = ( ((y_prev + 1) >= (10'd240 + box_length)) || (y_prev <= (10'd240 - box_length)) ) || ( ((x_prev + 1) >= (10'd320 + box_length)) || (x_prev <= (10'd320 - box_length)) );
-	 assign wall_hit = ( vx_next != vx_prev ) || ( vy_next != vy_prev );
+	 // assign wall_hit = ( vx_next != vx_prev ) || ( vy_next != vy_prev );
+	 assign hit_counter_out = ( ( vx_next != vx_prev ) || ( vy_next != vy_prev ) ) ? hit_counter_in + 10'd1 : hit_counter_in;
 	 
     assign x_next = ( (x_prev + vx_next) <= (10'd320 - box_length)) ? (10'd320 - box_length + 1) : ( (x_prev + vx_next) >= (10'd320 + box_length)) ? (10'd320 + box_length - 1) : x_prev + vx_next;
     assign y_next = ( (y_prev + vy_prev) <= (10'd240 - box_length)) ? (10'd240 - box_length + 1) : ( (y_prev + vy_prev) >= (10'd240 + box_length)) ? (10'd240 + box_length - 1) : y_prev + vy_next;
