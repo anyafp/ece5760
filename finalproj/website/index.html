@@ -79,14 +79,13 @@
 
       <hr id="intro">
 
-      <div style="text-align:left;">
+      <div style="text-align:center;">
               <h2>Introduction</h2>
-              <p style="text-align: left;padding: 0px 30px;">
-<p>Our project aimed to simulate gas particles that follow the ideal gas laws, implemented on the FPGA.</p> 
+              <p style="text-align: left;padding: 0px 0px;">Our project aimed to simulate gas particles that follow the ideal gas laws, implemented on the FPGA.</p> 
 
-<p>The gas simulation was done by representing particles with pixels that are printed on the VGA display, with collisions between particles being represented to follow the ideal gas laws. Several parameters were varied (pressure, volume of box, number of particles, and temperature) and observed the effects on the behavior of the particles.</p>
+<p style="text-align: left;padding: 0px 0px;">The gas simulation was done by representing particles with pixels that are printed on the VGA display, with collisions between particles being represented to follow the ideal gas laws. Several parameters were varied (pressure, volume of box, number of particles, and temperature) and observed the effects on the behavior of the particles.</p>
 
-<p>We decided to simulate gas particles because we wanted to design a project that related to real life physics concepts, and thought that a visual representation of these concepts would be interesting.
+<p style="text-align: left;padding: 0px 0px;">We decided to simulate gas particles because we wanted to design a project that related to real life physics concepts, and thought that a visual representation of these concepts would be interesting.
 </p>
       </div>
 
@@ -94,7 +93,22 @@
 
       <div style="text-align:center;">
               <h2>High Level Design</h2>
-              <p style="text-align: left;padding: 0px 30px;">Lorem ipsum dolor sit amet, consectetur adipiscing elit. Vestibulum lorem nulla, consectetur at leo vel, pretium bibendum nisl. Cras blandit quam a enim ultrices, eu convallis enim posuere. Donec eleifend enim sed purus consectetur, vitae cursus lectus varius. Vivamus consectetur felis nec est venenatis posuere. Phasellus vitae aliquet erat. In laoreet lacinia mollis. Quisque iaculis nisl fermentum pharetra lobortis. Donec rhoncus dui sem, ac molestie leo tristique vel. Phasellus in nibh feugiat, fringilla lectus in, elementum magna. Etiam quis dui condimentum, tempus ex in, dapibus est. Cras ut congue augue. Donec ac enim ex. Ut id tristique risus, vel porttitor quam. Sed ultricies enim eu nibh porttitor, vel sodales enim feugiat. Fusce volutpat venenatis magna ac ultrices. Curabitur eget urna ut nulla mattis convallis non eu diam.</p>
+              <p style="text-align: left;padding: 0px 0px;">The gas particles are represented on the VGA display, moving around and colliding with one another as well as colliding with a box that they are bound in.</p>
+              <div style="text-align:left;">
+                <h4>Calculation (Particle) Module</h4> 
+                <p>To determine how we wanted the particles to behave, we started off with analyzing the ideal gas laws to scope the extent of our project.</p>
+                <p>where p = pressure, V = volume, n = amount of substance, R = ideal gas constant, T = temperature </p>
+                <p>Pressure is represented by the number of collisions there are with the walls of the box over a period of time. </p>
+                <p>Using the pressure equation, we know that this is proportional to the force on the area (box). Force is calculated by taking the delta momentum over delta time, and momentum is proportional to the velocity of a particle. For constant velocity, the momentum of all particles would be constant since we keep mass constant, and the force would be directly proportional to the number of particles colliding with the wall at a given time. For a constant box size, pressure would be directly proportional to the force applied on the box. As a result, we can say that pressure is directly proportional to the number of particles colliding with the wall over a period of time.</p>
+                <p>Temperature is represented by the speed of the particles. </p>
+                <p>P = F/A can be rewritten as shown below.</p>
+                <p>The ideal gas equation can be rewritten as shown below.</p>
+                <p>Combining these two equations gives us the following equation</p>
+                <p>that related temperature and the average squared speed of the gas particles. Since we set mass and speed to be constant amongst all the particles, we can conclude that temperature is directly proportional to the speed of a particle.</p>
+                <p>Volume is represented by the size of the box that the gas particles are in and amount of substance is represented by the number of particles on the screen.</p>
+                <h4>Calculation (Particle) Module</h4> 
+                <p>The overall structure of the design is portrayed in the diagram above. A user would input their choice of parameter values, and those get sent to the FPGA which is constantly calculating the next position of each particle. With these new parameters, it would adjust accordingly how it would calculate the new position (speed), or change any other visual representation (box size or number of particles). Explained in detail in the hardware section, the FPGA would do the relevant calculations to determine the particle location, and draw this on the VGA along with the outline of the box that bounds the particles and erasing the previous particle.</p>
+                
       </div>
 
     <hr id='testing'>
@@ -145,7 +159,6 @@
               <script src="https://gist.github.com/anyafp/b92df7d2f2d346726cf072dfecdcf8bf.js"></script>
       </div>
 
-    <hr>
     
     <hr id='result'>
 
@@ -224,3 +237,4 @@
     <!-- <script src="../../assets/js/ie10-viewport-bug-workaround.js"></script> -->
   </body>
 </html>
+
