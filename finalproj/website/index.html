@@ -1,3 +1,10 @@
+<style type="text/css">
+  .gist {width:700px !important;}
+  .gist-file
+  .gist-data {max-height: 500px;max-width: 700px;}
+</style>
+
+
 <!DOCTYPE html>
 <html lang="en">
   <head>
@@ -114,7 +121,8 @@
                 
                 <script src="https://gist.github.com/anyafp/cd01bec3c73fc8d110f89bfe28e19097.js"></script>
                 
-                <h4>PIO Ports and Interaction with HPS</h4>To make the parameters of the simulation, consisting of velocity, box size, and number of particles, customizable at run time as well as to send pressure data to the HPS we added several PIO ports to the Qsys bus. The pressure value on the PIO port changes after a specific number of increments of the time step counter as described above. When we change the number of particles, as well as the box size, we simply reset the state machine and initialization occurs with the new values. The challenge came with changing the velocity without restarting the simulation. We solved this issue by examining the sign of the current velocity registers during the wait state and changing the speed of the particles according to the value on the PIO port while maintaining the sign. </h4>
+                <h4>PIO Ports and Interaction with HPS
+                </h4><p>To make the parameters of the simulation, consisting of velocity, box size, and number of particles, customizable at run time as well as to send pressure data to the HPS we added several PIO ports to the Qsys bus. The pressure value on the PIO port changes after a specific number of increments of the time step counter as described above. When we change the number of particles, as well as the box size, we simply reset the state machine and initialization occurs with the new values. The challenge came with changing the velocity without restarting the simulation. We solved this issue by examining the sign of the current velocity registers during the wait state and changing the speed of the particles according to the value on the PIO port while maintaining the sign. </p>
                   
                   
       </div>
@@ -124,10 +132,34 @@
     <hr id='result'>
 
       <div style="text-align:center;">
-              <h2>Result</h2>
-              <p style="text-align: left;padding: 0px 30px;">Lorem ipsum dolor sit amet, consectetur adipiscing elit. Vestibulum lorem nulla, consectetur at leo vel, pretium bibendum nisl. Cras blandit quam a enim ultrices, eu convallis enim posuere. Donec eleifend enim sed purus consectetur, vitae cursus lectus varius. Vivamus consectetur felis nec est venenatis posuere. Phasellus vitae aliquet erat. In laoreet lacinia mollis. Quisque iaculis nisl fermentum pharetra lobortis. Donec rhoncus dui sem, ac molestie leo tristique vel. Phasellus in nibh feugiat, fringilla lectus in, elementum magna. Etiam quis dui condimentum, tempus ex in, dapibus est. Cras ut congue augue. Donec ac enim ex. Ut id tristique risus, vel porttitor quam. Sed ultricies enim eu nibh porttitor, vel sodales enim feugiat. Fusce volutpat venenatis magna ac ultrices. Curabitur eget urna ut nulla mattis convallis non eu diam.</p>
+              <h2>Software</h2>
+              <p style="text-align: left;padding: 0px 0px;">On the HPS, this is where the user can change parameter values. Since there are 4 parameters that can vary in value, we decided that 2 of these parameters must remain constant as the other 2 are changed. Once this is set, between the two parameters that are changed, one is to be set by the user, and the other will get adjusted. Below is an example:</p>
+              <p style="text-align: left;padding: 0px 0px;">Constant parameters: pressure and temperature</p>
+              <p style="text-align: left;padding: 0px 0px;">User changes: volume</p>
+              <p style="text-align: left;padding: 0px 0px;">Adjusted parameter: number of particles</p>
+              <p style="text-align: left;padding: 0px 0px;">What the user will see after they set a new volume is that the box size will change immediately, and because of that the pressure will also change. Since pressure is one of the constant parameters, we want to adjust the number of particles to change the pressure to its original value. This is done by slowly changing the number of particles until the pressure we calculate is similar to original pressure.</p>
+              <p style="text-align: left;padding: 0px 0px;">The first step is to allow the user to set which parameter should be kept constant, and which should be variable. This could be done on the HPS by asking the user to choose which parameters to keep constant on the command line, but this would require many nested loops when scanning for the user input. Instead, we chose to use the switches on the FPGA to allow users to flip the switch to indicate that those are the parameters that they want to change. The values of the switches are sent over to the HPS over PIO ports so that it knows which case statement to go to when a user wants to change parameters.</p>
+              <p style="text-align: left;padding: 0px 0px;">Once they have set 2 parameters to change, the command line waits for the user to input what they want to do next. They can either print the current parameter values (0), or change parameters (1). Below is what the output looks like when a user wants to print the current parameters.</p>
+              <p style="text-align: left;padding: 0px 0px;">This gives us insight on the scale of the values of each parameter before we set a number to change one of the parameters. </p>
+              
+              <script src="https://gist.github.com/anyafp/b92df7d2f2d346726cf072dfecdcf8bf.js"></script>
       </div>
 
+    <hr>
+    
+    <hr id='result'>
+
+      <div style="text-align:center;">
+              <h2>Results</h2>
+              
+              <p style="text-align: left;padding: 0px 30px;">
+                  <div style="text-align:left;">
+                  <h4>Testing</h4> 
+                  <p>We incrementally tested each part of the hardware mentioned above in modelsim before compiling it on the FPGA. For the particle position module, we simulated one particle, updated the input wires with the new values at every tick of the clock and observed the output position on the wire. Below is an image with the one particle with a certain set of initial conditions, and the x_ and y_ values are the VGA coordinates. The triangular pulses represent the particle bouncing from one corner of the box to the other corner and back again.</p>
+                  <p>To test the LFSR in modelsim we set an output that was read after the 13 shifts were performed and the done signal was set high. We then examined the wave output to see if we were getting random values and looked at the range of the output values to ensure that the masking was working.</p>
+                  <p>	While simply simulating the interaction of several particles with the box on the VGA, we noticed that parts of the box were being erased. This would occur if the position of the particle overlapped with the box even for one cycle, so we added a case to only erase the particle if it was not in the set of the coordinates where the box existed. </p>
+                  <h4>Resource Utilization</h4> 
+              
     <hr>
 
     <div class="row" style="text-align:center;">
@@ -150,40 +182,33 @@
           </div>
       </div>
 
-    <hr>
-      <div style="font-size:18px">
-          <h2>Parts List</h2>
-          <ul>
-              <li>Raspberry Pi $35.00</li>
-              <li>Raspberry Pi Camera V2 $25.00</li>
-              <a href="https://www.adafruit.com/product/1463"><li>NeoPixel Ring - $9.95</li></a>
-              <li>LEDs, Resistors and Wires - Provided in lab</li>
-          </ul>
-          <h3>Total: $69.95</h3>
-      </div>
-      <hr>
       <div style="font-size:18px">
           <h2>References</h2>
-          <a href="https://picamera.readthedocs.io/">PiCamera Document</a><br>
-          <a href="http://www.micropik.com/PDF/SG90Servo.pdf">Tower Pro Servo Datasheet</a><br>
-          <a href="http://getbootstrap.com/">Bootstrap</a><br>
-          <a href="http://abyz.co.uk/rpi/pigpio/">Pigpio Library</a><br>
-          <a href="https://sourceforge.net/p/raspberry-gpio-python/wiki/Home/">R-Pi GPIO Document</a><br>
+          <a href="https://simplefpga.blogspot.com/2013/02/random-number-generator-in-verilog-fpga.html">LFSR Code</a><br>
+          <a href="https://vanhunteradams.com/DE1/VGA_Driver/Driver.html">VGA Driver</a><br>
+          <a href="https://en.wikipedia.org/wiki/Kinetic_theory_of_gases">Kinetic Theory of Gases</a><br>
+          <a href="https://en.wikipedia.org/wiki/Ideal_gas_law">Ideal Gas Law</a><br>
 
       </div>
 
+    
     <hr>
+    
+    <div class="row">
+    <h2>Appendix A</h2>
+    
+    <p>The group approves this report for inclusion on the course website.</p>
+    <p>The group approves the video for inclusion on the course youtube channel.</p>
+    
+    </div>
+    
+     <hr>
 
       <div class="row">
               <h2>Code Appendix</h2>
-              <pre><code>
-// Hello World.c
-int main(){
-  printf("Hello World.\n");
-}
-              </code></pre>
-      </div>
 
+      </div>
+      
     </div><!-- /.container -->
 
 
