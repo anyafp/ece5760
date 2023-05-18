@@ -55,10 +55,10 @@
             <li class="active"><a href="#">Home</a></li>
             <li><a href="#intro">Introduction</a></li>
             <li><a href="#high">High Level Design</a></li>
-            <li><a href="#design">Design</a></li>
-            <li><a href="#drawings">Drawings</a></li>
-            <li><a href="#testing">Testing</a></li>
-            <li><a href="#result">Result</a></li>
+            <li><a href="#hw">Hardware</a></li>
+            <li><a href="#sw">Software</a></li>
+            <li><a href="#result">Results</a></li>
+            <li><a href="#conc">Conclusion</a></li>
           </ul>
         </div><!--/.nav-collapse -->
       </div>
@@ -112,7 +112,7 @@
                 
       </div>
 
-    <hr id='testing'>
+    <hr id='hw'>
 
       <div style="text-align:center;">
               <h2>Hardware</h2>
@@ -144,7 +144,7 @@
       </div>
       
 
-    <hr id='result'>
+    <hr id='sw'>
 
       <div style="text-align:center;">
               <h2>Software</h2>
@@ -177,6 +177,15 @@
                   <p>To test the LFSR in modelsim we set an output that was read after the 13 shifts were performed and the done signal was set high. We then examined the wave output to see if we were getting random values and looked at the range of the output values to ensure that the masking was working.</p>
                   <p>	While simply simulating the interaction of several particles with the box on the VGA, we noticed that parts of the box were being erased. This would occur if the position of the particle overlapped with the box even for one cycle, so we added a case to only erase the particle if it was not in the set of the coordinates where the box existed. </p>
                   <h4>Resource Utilization</h4> 
+              
+    <hr>
+
+    <hr id='conc'>
+
+      <div style="text-align:center;">
+              <h2>Conclusion</h2>
+              <p>We were hoping to achieve more particles to be able to fill up the screen, especially after removing the generate statement. We thought that would free up most of the logic which was our limiting factor but it did not which was puzzling.</p>
+              <p>There are a lot of other parameters that can be adjusted that would have been cool if we had more time. Some examples are varying speeds between particles, having particles travel in more than 2 axis directions, varying masses of particles, etc.</p>
               
     <hr>
 
