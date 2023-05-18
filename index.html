@@ -48,7 +48,7 @@
             <span class="icon-bar"></span>
             <span class="icon-bar"></span>
           </button>
-          <a class="navbar-brand" href="#">Project name</a>
+          <a class="navbar-brand" href="#">FPGA Gas Simulator</a>
         </div>
         <div id="navbar" class="collapse navbar-collapse">
           <ul class="nav navbar-nav">
@@ -107,7 +107,7 @@
                 <p>that related temperature and the average squared speed of the gas particles. Since we set mass and speed to be constant amongst all the particles, we can conclude that temperature is directly proportional to the speed of a particle.</p>
                 <p>Volume is represented by the size of the box that the gas particles are in and amount of substance is represented by the number of particles on the screen.</p>
                 <h4>Logical Structure</h4> 
-                <img src="./pics/diag.drawio.png" alt="FPGA Switch image" width="300" height="240">
+                <img class="center" src="./pics/diag.drawio.png" alt="FPGA Switch image" width="400" height="240">
                 <p>The overall structure of the design is portrayed in the diagram above. A user would input their choice of parameter values, and those get sent to the FPGA which is constantly calculating the next position of each particle. With these new parameters, it would adjust accordingly how it would calculate the new position (speed), or change any other visual representation (box size or number of particles). Explained in detail in the hardware section, the FPGA would do the relevant calculations to determine the particle location, and draw this on the VGA along with the outline of the box that bounds the particles and erasing the previous particle.</p>
                 
       </div>
@@ -154,7 +154,7 @@
               <p style="text-align: left;padding: 0px 0px;">Adjusted parameter: number of particles</p>
               <p style="text-align: left;padding: 0px 0px;">What the user will see after they set a new volume is that the box size will change immediately, and because of that the pressure will also change. Since pressure is one of the constant parameters, we want to adjust the number of particles to change the pressure to its original value. This is done by slowly changing the number of particles until the pressure we calculate is similar to original pressure.</p>
               <p style="text-align: left;padding: 0px 0px;">The first step is to allow the user to set which parameter should be kept constant, and which should be variable. This could be done on the HPS by asking the user to choose which parameters to keep constant on the command line, but this would require many nested loops when scanning for the user input. Instead, we chose to use the switches on the FPGA to allow users to flip the switch to indicate that those are the parameters that they want to change. The values of the switches are sent over to the HPS over PIO ports so that it knows which case statement to go to when a user wants to change parameters.</p>
-              <img src="./pics/switch.PNG" alt="FPGA Switch image" width="300" height="240">
+              <img class="center" src="./pics/switch.PNG" alt="FPGA Switch image" width="300" height="240">
               <p></p>
               <p style="text-align: left;padding: 0px 0px;">Once they have set 2 parameters to change, the command line waits for the user to input what they want to do next. They can either print the current parameter values (0), or change parameters (1). Below is what the output looks like when a user wants to print the current parameters.</p>
               <p style="text-align: left;padding: 0px 0px;">This gives us insight on the scale of the values of each parameter before we set a number to change one of the parameters. </p>
