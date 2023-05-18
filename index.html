@@ -95,7 +95,7 @@
               <h2>High Level Design</h2>
               <p style="text-align: left;padding: 0px 0px;">The gas particles are represented on the VGA display, moving around and colliding with one another as well as colliding with a box that they are bound in.</p>
               <div style="text-align:left;">
-                <h4>Calculation (Particle) Module</h4> 
+                <h4>Ideal Gas Law</h4> 
                 <p>To determine how we wanted the particles to behave, we started off with analyzing the ideal gas laws to scope the extent of our project.</p>
                 <p>where p = pressure, V = volume, n = amount of substance, R = ideal gas constant, T = temperature </p>
                 <p>Pressure is represented by the number of collisions there are with the walls of the box over a period of time. </p>
@@ -106,7 +106,8 @@
                 <p>Combining these two equations gives us the following equation</p>
                 <p>that related temperature and the average squared speed of the gas particles. Since we set mass and speed to be constant amongst all the particles, we can conclude that temperature is directly proportional to the speed of a particle.</p>
                 <p>Volume is represented by the size of the box that the gas particles are in and amount of substance is represented by the number of particles on the screen.</p>
-                <h4>Calculation (Particle) Module</h4> 
+                <h4>Logical Structure</h4> 
+                <img src="./pics/diag.drawio.png" alt="FPGA Switch image" width="300" height="240">
                 <p>The overall structure of the design is portrayed in the diagram above. A user would input their choice of parameter values, and those get sent to the FPGA which is constantly calculating the next position of each particle. With these new parameters, it would adjust accordingly how it would calculate the new position (speed), or change any other visual representation (box size or number of particles). Explained in detail in the hardware section, the FPGA would do the relevant calculations to determine the particle location, and draw this on the VGA along with the outline of the box that bounds the particles and erasing the previous particle.</p>
                 
       </div>
